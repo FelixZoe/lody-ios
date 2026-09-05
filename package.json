@@ -1,0 +1,26 @@
+{
+  "name": "lody-ios",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@11.10.0",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "pnpm --filter @lody-ios/mobile start",
+    "ios": "pnpm --filter @lody-ios/mobile ios",
+    "prebuild": "pnpm --filter @lody-ios/mobile prebuild",
+    "bundle": "pnpm --filter @lody-ios/mobile bundle",
+    "typecheck": "pnpm --filter @lody-ios/mobile typecheck",
+    "check": "pnpm typecheck && pnpm format:check",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "node --experimental-strip-types --experimental-test-module-mocks --test apps/mobile/tests/*.test.mjs"
+  },
+  "devDependencies": {
+    "@babel/core": "7.29.7",
+    "babel-preset-expo": "57.0.10",
+    "esbuild": "0.25.12",
+    "prettier": "3.9.6"
+  }
+}

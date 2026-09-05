@@ -1,0 +1,261 @@
+import { Flock } from '@loro-dev/flock-wasm/base64';
+import { StreamsClient } from '@loro-dev/streams-client';
+import { decompress } from 'fzstd';
+import { projectRows, type Catalog } from '../../../src/cloud/model';
+import {
+  openSession,
+  closeSession,
+  sendTurn as sendSessionTurn,
+} from './session';
+import { decodeFrames, encodeFrame } from '../decoder/frames';
+
+type Grant = { token: string; gatewayBaseUrl: string; expiresIn: number };
+const host = (globalThis as any).webkit.messageHandlers.dataRuntime;
+const send = (message: object) => host.postMessage(message);
+let grantResolve: ((grant: Grant) => void) | undefined;
+let grantReject: ((error: Error) => void) | undefined;
+let grant: Grant | undefined,
+  expiresAt = 0;
+let grantPending: Promise<Grant> | undefined;
+async function getGrant() {
+  if (grant && Date.now() < expiresAt) return grant;
+  if (!grantPending) {
+    grantPending = new Promise<Grant>((resolve, reject) => {
+      grantResolve = resolve;
+      grantReject = reject;
+      send({ type: 'grant' });
+    }).finally(() => {
+      grantPending = undefined;
+    });
+  }
+  return grantPending;
+}
+const delay = (ms: number, signal: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new Error('cancelled'));
+      return;
+    }
+    const abort = () => {
+      clearTimeout(timer);
+      reject(new Error('cancelled'));
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', abort);
+      resolve();
+    }, ms);
+    signal.addEventListener('abort', abort, { once: true });
+  });
+let metaReplica: { flock: Flock; client: StreamsClient } | undefined;
+let workspace = '';
+async function markDispatch(sessionId: string, turnId: string) {
+  if (!metaReplica) throw new Error('metadata_not_ready');
+  const { flock, client } = metaReplica;
+  const version = flock.version();
+  flock.set(['m', `session-${sessionId}`, 'latestUserMsgId'], turnId);
+  flock.set(
+    ['m', `session-${sessionId}`, 'lastMissingHistoryUserMsgId'],
+    undefined,
+  );
+  flock.commit();
+  const result = await client.append({
+    part: {
+      contentType: 'application/octet-stream',
+      body: encodeFrame(
+        new TextEncoder().encode(JSON.stringify(flock.exportJson(version))),
+      ),
+    },
+  });
+  if (!result.ok) throw new Error(result.result.code);
+}
+
+const watchers = new Map<string, AbortController>();
+const catalogs = new Map<string, Catalog>();
+const unhealthy = new Set<string>();
+let revision = 0;
+let lastPublished = '';
+function publish() {
+  const meta = catalogs.get('meta');
+  if (!meta) return;
+  const expected = new Set(['meta', ...meta.machineIds]);
+  for (const [id, controller] of watchers)
+    if (!expected.has(id)) {
+      controller.abort();
+      watchers.delete(id);
+      catalogs.delete(id);
+      unhealthy.delete(id);
+    }
+  for (const machine of meta.machineIds)
+    if (!watchers.has(machine)) watch(machine);
+  if (unhealthy.size || meta.machineIds.some((id) => !catalogs.has(id))) return;
+  const projects = new Map(meta.projects.map((p) => [p.id, p]));
+  for (const id of meta.machineIds)
+    for (const p of catalogs.get(id)!.projects) projects.set(p.id, p);
+  const catalog = JSON.stringify({
+    ...meta,
+    projects: [...projects.values()].sort((a, b) =>
+      a.name.localeCompare(b.name),
+    ),
+    sessions: [...meta.sessions].sort((a, b) =>
+      b.createdAt.localeCompare(a.createdAt),
+    ),
+  });
+  if (catalog !== lastPublished) {
+    lastPublished = catalog;
+    send({ type: 'catalog', catalog, revision: ++revision });
+  }
+  send({ type: 'synced', revision, streams: watchers.size });
+}
+function apply(flock: Flock, bytes: Uint8Array) {
+  for (const frame of decodeFrames(bytes))
+    flock.importJson(JSON.parse(new TextDecoder().decode(frame)));
+}
+function watch(mode: string) {
+  const controller = new AbortController();
+  watchers.set(mode, controller);
+  const { signal } = controller;
+  void (async () => {
+    let failures = 0;
+    while (!signal.aborted) {
+      try {
+        const authorization = await getGrant();
+        if (signal.aborted) return;
+        const stream =
+          mode === 'meta' ? `${workspace}:meta` : `${workspace}:mf:${mode}`;
+        const client = new StreamsClient({
+          url: `${authorization.gatewayBaseUrl.replace(/\/$/, '')}/ds/lody/${encodeURIComponent(stream)}`,
+          auth: async () => (await getGrant()).token,
+          retry: { maxAttempts: 1 },
+          timeout: { connectTimeoutMs: 15000, pollTimeoutMs: 35000 },
+        });
+        send({ type: 'diagnostic', stage: 'bootstrap', stream: mode });
+        const initial = await client.bootstrap({ signal });
+        send({
+          type: 'diagnostic',
+          stage: initial.ok ? 'bootstrap_ok' : initial.result.code,
+          stream: mode,
+        });
+        if (!initial.ok) {
+          if (initial.result.code === 'not_found' && mode !== 'meta') {
+            unhealthy.delete(mode);
+            catalogs.set(mode, { projects: [], sessions: [], machineIds: [] });
+            publish();
+            await delay(30000, signal);
+            continue;
+          }
+          throw new Error(initial.result.code);
+        }
+        const flock = new Flock(`lody-ios-${crypto.randomUUID()}`);
+        const data = initial.result;
+        let size = 0;
+        if (data.snapshotOffset !== '-1' && data.snapshot) {
+          const bytes = data.snapshot.body;
+          size += bytes.length;
+          if (size > 8 * 1024 * 1024) throw new Error('catalog_limit');
+          flock.importFile(
+            bytes[0] === 0x28 &&
+              bytes[1] === 0xb5 &&
+              bytes[2] === 0x2f &&
+              bytes[3] === 0xfd
+              ? decompress(bytes)
+              : bytes,
+          );
+        }
+        for (const part of data.updates) {
+          size += part.body.length;
+          if (size > 8 * 1024 * 1024) throw new Error('catalog_limit');
+          apply(flock, part.body);
+        }
+        let offset = data.nextOffset,
+          cursor = data.cursor,
+          upToDate = data.upToDate;
+        let pages = 0;
+        while (!signal.aborted) {
+          if (upToDate) {
+            if (mode === 'meta') metaReplica = { flock, client };
+            unhealthy.delete(mode);
+            catalogs.set(mode, projectRows(flock.scan(), mode));
+            publish();
+            failures = 0;
+            pages = 0;
+          }
+          const response = await client.readOnce({
+            offset,
+            cursor,
+            signal,
+            ...(upToDate ? { live: 'long-poll' as const } : {}),
+          });
+          if (!response.ok) throw new Error(response.result.code);
+          const next = response.result;
+          if (signal.aborted) return;
+          if (next.payload) {
+            size += next.payload.body.length;
+            if (size > 8 * 1024 * 1024) throw new Error('catalog_limit');
+            apply(flock, next.payload.body);
+          }
+          if (next.nextOffset === offset && !next.upToDate)
+            throw new Error('stalled_cursor');
+          if (++pages > 100 && !next.upToDate) throw new Error('catalog_limit');
+          offset = next.nextOffset;
+          cursor = next.cursor;
+          upToDate = next.upToDate;
+          if (next.closed) throw new Error('stream_closed');
+          // Empty responses may arrive immediately; avoid a hot polling loop.
+          if (!next.payload?.body.length && upToDate) await delay(1000, signal);
+        }
+      } catch (error) {
+        if (signal.aborted) return;
+        if (mode === 'meta') metaReplica = undefined;
+        unhealthy.add(mode);
+        const reason = error instanceof Error ? error.message : 'sync_failed';
+        send({
+          type: 'syncError',
+          reason: ['catalog_limit', 'stream_closed', 'stalled_cursor'].includes(
+            reason,
+          )
+            ? reason
+            : 'network_or_auth',
+          stream: mode,
+        });
+        grant = undefined;
+        if (reason === 'catalog_limit') return;
+        try {
+          await delay(
+            Math.min(30000, 2000 * 2 ** Math.min(failures++, 4)),
+            signal,
+          );
+        } catch {
+          return;
+        }
+      }
+    }
+  })();
+}
+Object.assign(globalThis, {
+  dataRuntime: {
+    ping: () => true,
+    session(id: string) {
+      return openSession(id, workspace, getGrant, send, markDispatch);
+    },
+    closeSession,
+    sendTurn(args: Parameters<typeof sendSessionTurn>[0]) {
+      if (!metaReplica) throw new Error('metadata_not_ready');
+      return sendSessionTurn(args);
+    },
+    start(id: string) {
+      workspace = id;
+      watch('meta');
+    },
+    grant(value: Grant | null) {
+      if (!value) grantReject?.(new Error('grant_failed'));
+      else {
+        grant = value;
+        expiresAt = Date.now() + Math.max(1, value.expiresIn - 30) * 1000;
+        grantResolve?.(value);
+      }
+      grantResolve = undefined;
+      grantReject = undefined;
+    },
+  },
+});
+send({ type: 'ready' });

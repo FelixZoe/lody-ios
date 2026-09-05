@@ -1,0 +1,157 @@
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type PropsWithChildren,
+} from 'react';
+import {
+  readAuthToken,
+  saveAuthToken,
+  clearAuthToken,
+  openAuthBrowser,
+  closeAuthBrowser,
+} from '@lody-ios/kit';
+import {
+  AuthError,
+  authRequest,
+  getAccount,
+  requestDeviceCode,
+  pollDeviceToken,
+  type DeviceCode,
+  type User,
+  type Workspace,
+} from '@/cloud/auth';
+
+type Account = { token: string; user: User; workspaces: Workspace[] };
+type AuthState = {
+  account: Account | null;
+  busy: boolean;
+  code: DeviceCode | null;
+  error: string | null;
+};
+type AuthContextValue = AuthState & {
+  login: () => Promise<void>;
+  cancel: () => void;
+  restore: () => Promise<void>;
+  logout: () => Promise<void>;
+  reopen: () => Promise<void>;
+};
+const Context = createContext<AuthContextValue | null>(null);
+export function AuthProvider({ children }: PropsWithChildren) {
+  const [state, setState] = useState<AuthState>({
+    account: null,
+    busy: true,
+    code: null,
+    error: null,
+  });
+  const pending = useRef<AbortController | null>(null);
+  const alive = useRef(true);
+  const begin = () => {
+    pending.current?.abort();
+    const controller = new AbortController();
+    pending.current = controller;
+    return controller.signal;
+  };
+  const update = (signal: AbortSignal, next: Partial<AuthState>) => {
+    if (alive.current && !signal.aborted) setState((s) => ({ ...s, ...next }));
+  };
+  async function restore() {
+    const signal = begin();
+    update(signal, { busy: true, error: null });
+    try {
+      const token = await readAuthToken();
+      if (!token) {
+        update(signal, { account: null });
+        return;
+      }
+      const account = await getAccount(token, signal);
+      update(signal, { account: { token, ...account } });
+    } catch (error) {
+      if (error instanceof AuthError && !signal.aborted) {
+        await clearAuthToken();
+        update(signal, { account: null });
+      }
+      update(signal, {
+        error: error instanceof Error ? error.message : '登录恢复失败',
+      });
+    } finally {
+      update(signal, { busy: false });
+    }
+  }
+  async function login() {
+    const signal = begin();
+    update(signal, { busy: true, code: null, error: null });
+    try {
+      const code = await requestDeviceCode(signal);
+      update(signal, { code });
+      if (signal.aborted) throw new Error('已取消');
+      await openAuthBrowser(code.verification_uri_complete);
+      const token = await pollDeviceToken(code, signal);
+      const account = await getAccount(token, signal);
+      if (signal.aborted) throw new Error('已取消');
+      await saveAuthToken(token);
+      if (signal.aborted) throw new Error('已取消');
+      update(signal, { account: { token, ...account }, code: null });
+    } catch (error) {
+      update(signal, {
+        error: error instanceof Error ? error.message : '登录失败',
+        code: null,
+      });
+    } finally {
+      if (!signal.aborted) {
+        await closeAuthBrowser();
+        update(signal, { busy: false });
+      }
+    }
+  }
+  function cancel() {
+    pending.current?.abort();
+    void closeAuthBrowser();
+    setState((s) => ({ ...s, busy: false, code: null }));
+  }
+  async function logout() {
+    const token = state.account?.token,
+      signal = begin();
+    update(signal, { busy: true, error: null });
+    try {
+      await clearAuthToken();
+      update(signal, { account: null, code: null });
+      if (token) await authRequest('/sign-out', { token, body: {}, signal });
+    } catch {
+      update(signal, {
+        error: '退出未完全完成，请重试；本机凭据是否清除以当前登录状态为准',
+      });
+    } finally {
+      update(signal, { busy: false });
+    }
+  }
+  async function reopen() {
+    if (!state.code) return;
+    try {
+      await openAuthBrowser(state.code.verification_uri_complete);
+    } catch {
+      setState((s) => ({ ...s, error: '无法打开授权页，请取消后重试' }));
+    }
+  }
+  useEffect(() => {
+    alive.current = true;
+    void restore();
+    return () => {
+      alive.current = false;
+      pending.current?.abort();
+      void closeAuthBrowser();
+    };
+  }, []);
+  return (
+    <Context value={{ ...state, login, cancel, restore, logout, reopen }}>
+      {children}
+    </Context>
+  );
+}
+export function useAuth() {
+  const value = useContext(Context);
+  if (!value) throw new Error('Missing AuthProvider');
+  return value;
+}

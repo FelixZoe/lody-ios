@@ -1,0 +1,42 @@
+{
+  "name": "@lody-ios/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start --dev-client",
+    "ios": "pnpm native:assets && expo run:ios",
+    "prebuild": "pnpm native:assets && expo prebuild --platform ios",
+    "bundle": "pnpm native:assets && expo export --platform ios --output-dir .expo/export-check",
+    "typecheck": "tsc --noEmit",
+    "native:assets": "node scripts/build-decoder.mjs"
+  },
+  "dependencies": {
+    "@loro-dev/flock-wasm": "0.4.3",
+    "@loro-dev/streams-client": "0.7.0",
+    "base64-js": "1.5.1",
+    "expo": "~57.0.20",
+    "expo-constants": "~57.0.7",
+    "expo-dev-client": "~57.0.18",
+    "expo-linking": "~57.0.4",
+    "expo-router": "~57.0.8",
+    "expo-status-bar": "~57.0.1",
+    "expo-system-ui": "~57.0.1",
+    "fzstd": "0.1.1",
+    "loro-crdt": "1.15.1",
+    "punycode": "2.3.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-markdown-display": "7.0.2",
+    "react-native-reanimated": "4.5.1",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "~4.26.0",
+    "react-native-worklets": "0.10.1"
+  },
+  "devDependencies": {
+    "@react-native/metro-config": "0.86.3",
+    "@types/react": "~19.2.2",
+    "typescript": "~6.0.3"
+  }
+}
