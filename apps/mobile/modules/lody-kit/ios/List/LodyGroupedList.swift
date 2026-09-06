@@ -123,6 +123,14 @@ final class LodyGroupedList: ExpoView, UICollectionViewDelegate, UISearchBarDele
     cell.accessibilityTraits = row.action ? .button : .staticText
   }
 
+  private let sessionRegistration = UICollectionView.CellRegistration<UICollectionViewListCell, LodyListRow> { cell, _, row in
+    let dot = row.image.isEmpty ? nil : (lodyTint(row.imageTint) ?? LodyGroupedList.accent)
+    cell.contentConfiguration = LodySessionRowContent(row: row, dot: dot, live: dot != nil && row.imageTint.hasPrefix("#"))
+    cell.accessories = row.disclosure ? [.disclosureIndicator()] : []
+    cell.accessibilityIdentifier = row.id
+    cell.accessibilityTraits = row.action ? .button : .staticText
+  }
+
   private let headerRegistration = UICollectionView.SupplementaryRegistration<SectionSupplementaryCell>(
     elementKind: UICollectionView.elementKindSectionHeader
   ) { _, _, _ in }
@@ -436,15 +444,12 @@ final class LodyGroupedList: ExpoView, UICollectionViewDelegate, UISearchBarDele
   }
 
   private func cell(in collectionView: UICollectionView, at indexPath: IndexPath, row: LodyListRow) -> UICollectionViewListCell {
-    let cell = collectionView.dequeueConfiguredReusableCell(using: registration, for: indexPath, item: row)
+    let sessionRow = contentStyle && (!row.value.isEmpty || !row.badge.isEmpty)
+    let cell = collectionView.dequeueConfiguredReusableCell(using: sessionRow ? sessionRegistration : registration, for: indexPath, item: row)
     cell.configurationUpdateHandler = nil
     cell.automaticallyUpdatesBackgroundConfiguration = true
     if contentStyle {
-      if !row.value.isEmpty || !row.badge.isEmpty {
-        let dot = row.image.isEmpty ? nil : (lodyTint(row.imageTint) ?? LodyGroupedList.accent)
-        cell.contentConfiguration = LodySessionRowContent(row: row, dot: dot, live: dot != nil && row.imageTint.hasPrefix("#"))
-        cell.accessories = row.disclosure ? [.disclosureIndicator()] : []
-      } else if var content = cell.contentConfiguration as? UIListContentConfiguration {
+      if var content = cell.contentConfiguration as? UIListContentConfiguration {
         content.textProperties.numberOfLines = 2
         content.secondaryTextProperties.font = .preferredFont(forTextStyle: .footnote)
         content.directionalLayoutMargins = .init(top: 12, leading: 22, bottom: 12, trailing: 22)
@@ -511,7 +516,7 @@ final class LodyGroupedList: ExpoView, UICollectionViewDelegate, UISearchBarDele
         content.text = nil
         content.attributedText = title
         content.directionalLayoutMargins.top = 14
-        content.directionalLayoutMargins.bottom = section.rows.isEmpty ? 4 : 14
+        content.directionalLayoutMargins.bottom = 14
       }
     }
     if header && !section.headerActionId.isEmpty {
