@@ -251,3 +251,63 @@ modules/lody-kit/       Swift 按功能目录 + 单一 index.ts 类型化 props
 - `NativeCloseButton` 只服务 Debug 页透明覆盖层里的关闭按钮，同样在内容区内。
 
 **规则**：导航栏里的任何 action，一律走 `Stack.Toolbar`。`headerLeft` / `headerRight` 不再出现在这个代码库里。
+
+## iOS 26 玻璃 Sheet
+
+`src/ui/platform.ts` 导出唯一的版本常量：
+
+```ts
+export const isIOS26 = Number.parseInt(String(Platform.Version), 10) >= 26;
+```
+
+`nativePresentationOptions` 在 `isIOS26` 且样式是 `formSheet` / `pageSheet` 时，把 `contentStyle.backgroundColor` 设为 `transparent`，系统的玻璃材质就显出来。iOS 26 以下仍用实色——那些版本 sheet 背后没有材质，透明会直接看穿被遮的页面。
+
+Sheet 里的分组列表要配合两件事，两件都不是显而易见的：
+
+1. **列表自己的底去掉**（`transparent` prop → `collection.backgroundColor = .clear`），否则 `systemGroupedBackground` 会把玻璃盖死。
+2. **行必须显式取回不透明卡片色。** 在玻璃上下文里 UIKit 把 `secondarySystemGroupedBackground` 解析成 vibrant 半透明填充，sheet 背后的文字会直接透过行读出来。行用手写的 `#FFFFFF` / `#1C1C1E` 双值（仍随深浅色切换）。
+
+最终观感：行是干净的实心卡片，组与组之间和空白区露出玻璃。
+
+踩过的坑：`setTransparent` 里漏掉 `collection.reloadData()`，导致 prop 在 `sections` 之后到达时 cell 已经渲染完，改动完全不生效——两次构建截图一模一样，看起来像效果无效，其实是根本没跑。
+
+## Sheet 内的导航必须是嵌套栈
+
+`present()` 走的是扁平的根 Stack：`router.push('/presented/<id>')`。sheet 是这个栈上的一个 modal，**之后再 push 一个 push-style 页面，会落在呈现 sheet 的那个 navigation controller 上，也就是 sheet 后面**。所以「在 sheet 里 push 下一层」不能靠 `present`。
+
+正确做法是 sheet 自己持有一个嵌套的原生栈，用 `react-native-screens` 的 `ScreenStack` + `ScreenStackItem`——**稳定 API，不是 `react-native-screens/experimental` 的 gamma Stack**：
+
+```tsx
+<ScreenStack style={StyleSheet.absoluteFill}>
+  <ScreenStackItem screenId="create-form" headerConfig={{ title: '新建会话', … }}>
+    {form}
+  </ScreenStackItem>
+  {picking ? (
+    <ScreenStackItem
+      screenId="create-picker"
+      stackPresentation="push"
+      headerConfig={{ title: '选择项目', … }}
+      onDismissed={() => setPicking(null)}
+    >
+      <PickerList … />
+    </ScreenStackItem>
+  ) : null}
+</ScreenStack>
+```
+
+这套模式来自 Folo 的 `src/lib/navigation`：路由按类型分组，连续的 `push` 归一组；遇到 modal / formSheet 就开新组，而这个 modal 组内部**再嵌一个 `ScreenStack`**，把它之后的 push 全放进去。sheet 因此可以堆叠，也可以在内部继续 push。
+
+三层关系值得记住：`expo-router` 的 `<Stack>` 是 react-navigation navigator 的包装、只能当布局文件用；react-navigation `native-stack` 是纯 JS 的路由状态层；`react-native-screens` 的 `ScreenStack` 才是真正的 `UINavigationController`，可以嵌在任意位置。
+
+配套改动：
+
+- `createSessionPage` 的 `presentation.headerShown` 设为 `false`——嵌套栈画自己的 header，否则两条导航栏
+- `PickerScreen` 从 `definePage` 降级成纯组件 `PickerList`，不再是可 `present` 的页面
+- 两个屏的 `headerConfig` 都要 `translucent: true` + `backgroundColor: 'transparent'` + `hideShadow: true`，否则 header 会盖一层不透明底并画出分隔线，把玻璃切断
+- 关闭项用 `ScreenStackHeaderRightView` 包 `NativeCloseButton`（Swift 里就是 `UIButton(type: .close)`，系统关闭按钮本体）
+
+**规则**：需要在 sheet 内部分层的流程，用嵌套 `ScreenStack`；`present` 只用于从根栈打开一个新的呈现。
+
+## Composer 输入框不设 lineHeight
+
+RN 在 iOS 的多行 `TextInput` 上把 `lineHeight` 映射成 `NSParagraphStyle.minimumLineHeight`，多出的高度全加在文字**上方**——表现为上 padding 比下 padding 大、光标被拉长。17pt 的自然行高约 20.3，设成 25 就会偏 5pt。多行输入框只设 `fontSize` 与对称 padding。

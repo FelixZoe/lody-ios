@@ -13,7 +13,7 @@
 
 发送依次写入 Loro 用户历史、Flock `latestUserMsgId`，再发送 `session/dispatch-turn` RPC。两种 CRDT 增量均使用 uint32 大端长度封装。上传、机器接收、生成完成是不同状态；响应不明确时保留草稿并阻止再次点击发送。恢复不重放写操作。
 
-仍不包含磁盘副本、离线写入、完整工具卡片、附件发送、权限交互、Agent Role 配置、完整 loro-repo 适配或后台常驻保证。会话使用上次输入的执行配置；有 Agent Role 时拒绝发送，避免绕过其绑定。目录本轮输入上限 8 MiB / 100 页，会话 32 MiB，超过限制需重新同步。会话网络错误有手动重新同步入口。
+仍不包含 CRDT 磁盘副本、离线写入、完整工具卡片、附件发送、权限交互、Agent Role 配置、完整 loro-repo 适配或后台常驻保证。会话使用上次输入的执行配置；有 Agent Role 时拒绝发送，避免绕过其绑定。目录本轮输入上限 8 MiB / 100 页，会话 32 MiB，超过限制需重新同步。会话网络错误有手动重新同步入口。
 
 ## Safari 调试
 
@@ -70,3 +70,11 @@ JS 检查使用真实 Flock/Loro WASM 与受控 Streams 响应，验证副本更
 行为测试覆盖真实 Flock/Loro 解帧、新建后空历史与首条消息、无效配置/跨机器目标、GitHub 分支、删除中的本地项目、流建立失败以及目录 ACK 丢失且禁止重放。
 
 本轮通过 `pnpm check`、9 项行为测试、Hermes bundle 和正常签名的 iOS 模拟器构建。模拟器已验证读取现有助手配置、真实创建、目录同步和进入已连接的空会话。首条验收消息在电脑服务停止时成功保存至 Cloud；启动已安装的 Lody 桌面客户端后，电脑从持久化派发指针恢复执行。iOS 重新打开同一会话后显示预期回复 `LODY_IOS_CREATE_OK_0906`。日志确认该轮仅一次 execution start、一次 completed，执行约 23.8 秒，未重发消息。GitHub 分支创建路径目前由行为测试覆盖，尚未做真实仓库执行验收。
+
+## App 本地启动
+
+LodyKit 的 SQLite 保存账号展示信息、上次工作区和完整目录投影，按账号和工作区隔离，不保存凭据或消息 CRDT。启动用一次后台原生调用读取当前工作区；RN 先展示旧数据，身份校验和 WebView bootstrap 在后台进行。同步失败保留旧目录，导航栏以圆点提示离线，VoiceOver 保留状态说明；自动同步不拉起下拉刷新控件。登录失效和注销会清理本地缓存。
+
+当前按工作区保存完整 JSON 投影，受运行时 12 MiB 输出上限约束；不是分页数据库，也不缓存消息正文。目录规模增长时应先测恢复耗时，再迁移到索引行与分页读取。Debug 日志 `LodyLocal startup_ms` 测量原生 SQLite 读取（不含 RN 渲染）。
+
+可运行 `swiftc apps/mobile/modules/lody-kit/ios/Cloud/LocalStore.swift apps/mobile/modules/lody-kit/verification/local-store/main.swift -o /tmp/lody-local-store-check && /tmp/lody-local-store-check` 验证真实 SQLite 重开、工作区回退和清理。开发构建通过 `simctl launch … app.innei.lody --lody-offline` 注入账号恢复失败及官方后台的 URLProtocol 网络错误，用于有本地目录时的冷启动验收；Release 不注册此协议。
