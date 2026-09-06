@@ -155,6 +155,9 @@ test('send persists user before dispatch; duplicate incremental imports preserve
     attachmentBlocks: attachments,
     cliType: 'builtin',
     agentType: 'codex',
+    modelId: 'gpt-test',
+    reasoningEffort: 'high',
+    reasoningEffortConfigId: 'effort',
   });
   assert.equal(result.state, 'accepted');
   assert.equal(appends, 1);
@@ -166,8 +169,16 @@ test('send persists user before dispatch; duplicate incremental imports preserve
     user.inputConfig.inputBlocks,
   );
   assert.deepEqual(user.inputConfig.inputBlocks.slice(1), attachments);
-  const projectedImage = runtime.projectSession(server, 'live').entries[0]
-    .items[1];
+  assert.equal(rpc.params.inputConfig.modelId, 'gpt-test');
+  assert.deepEqual(rpc.params.inputConfig.configOptionValues, {
+    effort: 'high',
+  });
+  const projection = runtime.projectSession(server, 'live');
+  assert.deepEqual(projection.composer, {
+    modelId: 'gpt-test',
+    effort: 'high',
+  });
+  const projectedImage = projection.entries[0].items[1];
   assert.equal(projectedImage.type, 'image');
   assert.equal(projectedImage.image.id, 'img1');
   assert.equal(projectedImage.image.fileName, '照片.png');

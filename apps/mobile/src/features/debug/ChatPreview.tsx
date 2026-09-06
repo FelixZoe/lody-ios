@@ -29,6 +29,10 @@ function ChatPreview() {
   const [length, setLength] = useState(totalLength);
   const [step, setStep] = useState(48);
   const [mode, setMode] = useState<'normal' | 'attention'>('normal');
+  const [composerOptions, setComposerOptions] = useState({
+    modelId: 'gpt-5.6-sol',
+    effort: 'medium',
+  });
   const [clearDraftToken, setClearDraftToken] = useState(0);
   const [sent, setSent] = useState<{ text: string; id: number } | null>(null);
   useEffect(() => {
@@ -162,6 +166,7 @@ function ChatPreview() {
       </Stack.Toolbar>
       <NativeChat
         navigationTitle="原生聊天预览"
+        navigationSubtitle="lody-ios"
         onTitlePress={() => Alert.alert('会话详情', '原生 titleView 点击正常')}
         style={{ flex: 1 }}
         entriesJSON={entriesJSON}
@@ -172,6 +177,20 @@ function ChatPreview() {
           notice: '',
           reconnect: false,
           placeholder: '输入文字，检查键盘布局…',
+        })}
+        composerOptionsJSON={JSON.stringify({
+          ...composerOptions,
+          models: [
+            { id: 'gpt-5.6-sol', title: 'GPT-5.6 Sol' },
+            { id: 'gpt-6-astra', title: 'GPT-6 Astra' },
+          ],
+          efforts: [
+            { id: 'low', title: 'Low' },
+            { id: 'medium', title: 'Medium' },
+            { id: 'high', title: 'High' },
+            { id: 'xhigh', title: 'Extra High' },
+            { id: 'ultra', title: 'Ultra' },
+          ],
         })}
         clearDraftToken={clearDraftToken}
         emptyText=""
@@ -189,6 +208,9 @@ function ChatPreview() {
           openProcess(nativeEvent.entryId, nativeEvent.processStartId)
         }
         onReconnect={() => {}}
+        onComposerOptionChange={({ nativeEvent }) =>
+          setComposerOptions(nativeEvent)
+        }
       />
     </>
   );

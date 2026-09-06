@@ -7,10 +7,12 @@ export const NativeChat: ComponentType<
     entriesJSON: string;
     attachmentContextJSON?: string;
     navigationTitle?: string;
+    navigationSubtitle?: string;
     onTitlePress?: () => void;
     processEntryId?: string;
     processStartId?: string;
     composerJSON: string;
+    composerOptionsJSON?: string;
     initialDraft?: string;
     clearDraftToken: number;
     restoreDraftToken?: number;
@@ -34,5 +36,8 @@ export const NativeChat: ComponentType<
       }>,
     ) => void;
     onReconnect: () => void;
+    onComposerOptionChange?: (
+      event: NativeSyntheticEvent<{ modelId: string; effort: string }>,
+    ) => void;
   }
 > = requireNativeView('LodyKit', 'LodyChatView');

@@ -3,8 +3,8 @@ import { NativeGroupedList } from '@lody-ios/kit';
 import { definePage, usePageRuntime } from '@/presentation';
 import { useCatalog } from '@/cloud/CatalogProvider';
 import { usePalette } from '@/theme/palette';
-import { activityAt, sessionRow } from './inbox';
-import { newSession, openCatalogRow } from './navigation';
+import { byActivity, sessionRow } from './inbox';
+import { newSession, openCatalogRow, sessionRowAction } from './navigation';
 
 function ProjectScreen() {
   const {
@@ -15,7 +15,7 @@ function ProjectScreen() {
   const project = catalog.projects.find((p) => p.id === projectId);
   const sessions = catalog.sessions
     .filter((s) => s.projectId === projectId)
-    .sort((a, b) => activityAt(b) - activityAt(a));
+    .sort(byActivity);
   const sections = [false, true]
     .map((archived) => ({
       id: archived ? 'archived' : 'sessions',
@@ -58,6 +58,9 @@ function ProjectScreen() {
         onRowPress={({ nativeEvent }) =>
           openCatalogRow(nativeEvent.id, catalog)
         }
+        onRowAction={({ nativeEvent: { id, actionId } }) => {
+          if (selected) sessionRowAction(selected.id, catalog, id, actionId);
+        }}
       />
     </>
   );

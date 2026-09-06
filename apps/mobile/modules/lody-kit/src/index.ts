@@ -39,11 +39,14 @@ export {
   respondSessionPermission,
   sessionCreationOptions,
   createSession,
+  archiveSession,
+  pinSession,
   localProjects,
 } from './runtime/LodyKit';
 
 export {
   NativeGroupedList,
+  type NativeListAction,
   type NativeListRow,
   type NativeListSection,
 } from './list/NativeGroupedList';

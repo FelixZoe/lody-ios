@@ -3,15 +3,21 @@ import { useCatalog } from '@/cloud/CatalogProvider';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Alert } from 'react-native';
 import { usePalette } from '@/theme/palette';
-import { NativeChat, sendSessionTurn } from '@lody-ios/kit';
+import {
+  NativeChat,
+  sendSessionTurn,
+  sessionCreationOptions,
+} from '@lody-ios/kit';
 import { definePage, present, usePageRuntime } from '@/presentation';
+import { newSession, setArchived, setPinned } from './navigation';
 import { useAuth } from '@/features/auth/AuthProvider';
-import type { Session } from '@/cloud/model';
+import type { Capability, CreationOptions, Session } from '@/cloud/model';
 import type { EntrySummary, ItemSummary } from './transcript/types';
 import { pendingPermission, useSessionRuntime } from './useSessionRuntime';
 import { itemDetailPage } from './detail/itemDetailPage';
 import { permissionPage } from './detail/permissionPage';
 import { useProcessSheet } from './detail/processPage';
+import type { ModelChoice } from './ModelScreen';
 
 type Attachments = Parameters<
   NonNullable<React.ComponentProps<typeof NativeChat>['onSend']>
@@ -21,12 +27,13 @@ type SessionParams = {
   session: Session;
   initialDraft?: string;
   modelId?: string;
+  effort?: string;
   modeId?: string;
 };
 
 function SessionScreen() {
   const {
-    params: { session, initialDraft, modelId, modeId },
+    params: { session, initialDraft, modelId, effort, modeId },
   } = usePageRuntime<SessionParams>();
   const { account } = useAuth(),
     colors = usePalette();
@@ -34,6 +41,55 @@ function SessionScreen() {
   const project = catalog.projects.find((p) => p.id === session.projectId);
   const currentSession =
     catalog.sessions.find((s) => s.id === session.id) ?? session;
+  const [capability, setCapability] = useState<Capability>();
+  const [choice, setChoice] = useState<ModelChoice>({
+    modelId,
+    effort,
+    modeId,
+  });
+  const choiceHydrated = useRef(
+    modelId !== undefined || effort !== undefined || modeId !== undefined,
+  );
+
+  useEffect(() => {
+    if (
+      !selected?.id ||
+      !project?.id ||
+      !currentSession.cliType ||
+      !currentSession.agentType
+    ) {
+      setCapability(undefined);
+      return;
+    }
+    let active = true;
+    void sessionCreationOptions(
+      JSON.stringify({ workspaceId: selected.id, projectId: project.id }),
+    )
+      .then((raw) => {
+        if (!active) return;
+        const options: CreationOptions = JSON.parse(raw);
+        setCapability(
+          options.capabilities.find(
+            (item) =>
+              item.machineId === currentSession.machineId &&
+              item.cliType === currentSession.cliType &&
+              item.agentType === currentSession.agentType,
+          ),
+        );
+      })
+      .catch(() => {
+        if (active) setCapability(undefined);
+      });
+    return () => {
+      active = false;
+    };
+  }, [
+    selected?.id,
+    project?.id,
+    currentSession.machineId,
+    currentSession.cliType,
+    currentSession.agentType,
+  ]);
   const showDetails = () =>
     Alert.alert(
       currentSession.title,
@@ -46,6 +102,14 @@ function SessionScreen() {
     account?.user.id ?? '',
     selected?.id ?? '',
   );
+  useEffect(() => {
+    if (choiceHydrated.current || !snapshot.composer) return;
+    choiceHydrated.current = true;
+    setChoice(snapshot.composer);
+  }, [snapshot.composer]);
+  const activeChoice = choiceHydrated.current
+    ? choice
+    : (snapshot.composer ?? choice);
   const [clearDraftToken, setClearDraftToken] = useState(0),
     [restoreDraftToken, setRestoreDraftToken] = useState(0),
     [sending, setSending] = useState(false),
@@ -142,8 +206,14 @@ function SessionScreen() {
             cliType: session.cliType,
             agentType: session.agentType,
             resume: session.resume,
-            modelId,
-            modeId,
+            modelId: capability
+              ? (activeChoice.modelId ?? null)
+              : activeChoice.modelId,
+            modeId: activeChoice.modeId,
+            reasoningEffort: capability
+              ? (activeChoice.effort ?? null)
+              : activeChoice.effort,
+            reasoningEffortConfigId: capability?.reasoningEffortConfigId,
           }),
         ),
       );
@@ -205,6 +275,18 @@ function SessionScreen() {
     reconnect: disconnected || overflow,
     placeholder: currentSession.archived ? '此会话已归档' : '给 Lody 发消息…',
   });
+  const efforts = activeChoice.modelId
+    ? (capability?.reasoningEfforts[activeChoice.modelId] ?? [])
+    : [];
+  const composerOptionsJSON = JSON.stringify({
+    modelId: activeChoice.modelId ?? '',
+    effort: activeChoice.effort ?? '',
+    models: (capability?.models ?? []).map((item) => ({
+      id: item.id,
+      title: item.name,
+    })),
+    efforts: efforts.map((id) => ({ id, title: id })),
+  });
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <Stack.Screen
@@ -212,8 +294,48 @@ function SessionScreen() {
           title: currentSession.title,
         }}
       />
+      <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Menu icon="ellipsis.circle" accessibilityLabel="更多">
+          <Stack.Toolbar.MenuAction
+            icon="square.and.pencil"
+            onPress={() => {
+              if (selected)
+                void newSession(selected.id, catalog, currentSession.projectId);
+            }}
+          >
+            新建会话
+          </Stack.Toolbar.MenuAction>
+          <Stack.Toolbar.MenuAction
+            icon={currentSession.pinned ? 'pin.slash' : 'pin'}
+            onPress={() => {
+              if (selected)
+                void setPinned(
+                  selected.id,
+                  currentSession,
+                  !currentSession.pinned,
+                );
+            }}
+          >
+            {currentSession.pinned ? '取消置顶' : '置顶'}
+          </Stack.Toolbar.MenuAction>
+          <Stack.Toolbar.MenuAction
+            icon={currentSession.archived ? 'tray.and.arrow.up' : 'archivebox'}
+            onPress={() => {
+              if (selected)
+                void setArchived(
+                  selected.id,
+                  currentSession,
+                  !currentSession.archived,
+                );
+            }}
+          >
+            {currentSession.archived ? '取消归档' : '归档'}
+          </Stack.Toolbar.MenuAction>
+        </Stack.Toolbar.Menu>
+      </Stack.Toolbar>
       <NativeChat
         navigationTitle={currentSession.title}
+        navigationSubtitle={project?.name ?? ''}
         onTitlePress={showDetails}
         style={{ flex: 1 }}
         attachmentContextJSON={JSON.stringify({
@@ -222,6 +344,7 @@ function SessionScreen() {
         })}
         entriesJSON={entriesJSON}
         composerJSON={composerJSON}
+        composerOptionsJSON={composerOptionsJSON}
         initialDraft={initialDraft}
         clearDraftToken={clearDraftToken}
         restoreDraftToken={restoreDraftToken}
@@ -239,6 +362,14 @@ function SessionScreen() {
             : openProcess(nativeEvent.entryId, nativeEvent.processStartId)
         }
         onReconnect={reconnect}
+        onComposerOptionChange={({ nativeEvent }) => {
+          choiceHydrated.current = true;
+          setChoice((current) => ({
+            ...current,
+            modelId: nativeEvent.modelId || undefined,
+            effort: nativeEvent.effort || undefined,
+          }));
+        }}
       />
     </View>
   );

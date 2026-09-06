@@ -82,6 +82,15 @@ export function creationOptions(
         const fetchedAt = Number(value.fetchedAt) || 0;
         if ((capabilities.get(key)?.fetchedAt ?? -1) >= fetchedAt) continue;
         const efforts = value.modelReasoningEfforts;
+        const effortOption = (
+          Array.isArray(value.configOptions) ? value.configOptions : []
+        ).find((item) => {
+          const option = item as Record<string, unknown>;
+          return (
+            option.id === 'reasoning_effort' ||
+            option.category === 'thought_level'
+          );
+        }) as Record<string, unknown> | undefined;
         capabilities.set(key, {
           machineId,
           cliType,
@@ -100,6 +109,9 @@ export function creationOptions(
                 : [],
             ),
           ),
+          ...(typeof effortOption?.id === 'string' && effortOption.id
+            ? { reasoningEffortConfigId: effortOption.id }
+            : {}),
           fetchedAt,
         });
         continue;
@@ -221,6 +233,7 @@ export async function createSession(
     title: meta.title,
     status: 'idle',
     archived: false,
+    pinned: false,
     projectId: args.projectId,
     createdAt: meta.createdAt,
     cliType: meta.cliType,

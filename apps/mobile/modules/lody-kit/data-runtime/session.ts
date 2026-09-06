@@ -218,8 +218,10 @@ export async function sendTurn(args: {
   cliType: string;
   agentType: string;
   resume?: string;
-  modelId?: string;
+  modelId?: string | null;
   modeId?: string;
+  reasoningEffort?: string | null;
+  reasoningEffortConfigId?: string;
 }) {
   const state = active;
   if (!state || state.id !== args.sessionId || !state.ready || state.sending)
@@ -254,7 +256,16 @@ export async function sendTurn(args: {
     !args.userId ||
     !args.machineId ||
     !args.agentType ||
-    !args.cliType
+    !args.cliType ||
+    (args.reasoningEffort !== undefined &&
+      args.reasoningEffort !== null &&
+      (typeof args.reasoningEffort !== 'string' ||
+        !args.reasoningEffort ||
+        args.reasoningEffort.length > 128)) ||
+    (args.reasoningEffortConfigId !== undefined &&
+      (typeof args.reasoningEffortConfigId !== 'string' ||
+        !args.reasoningEffortConfigId ||
+        args.reasoningEffortConfigId.length > 128))
   )
     throw new Error('invalid_message');
   const id = crypto.randomUUID(),
@@ -268,6 +279,18 @@ export async function sendTurn(args: {
       )?.inputConfig ?? {};
     if (previous.agentRoleId)
       throw new Error('agent_role_requires_configuration');
+    const configOptionValues = {
+      ...(previous.configOptionValues &&
+      typeof previous.configOptionValues === 'object' &&
+      !Array.isArray(previous.configOptionValues)
+        ? previous.configOptionValues
+        : {}),
+    };
+    if (args.reasoningEffort !== undefined) {
+      const id = args.reasoningEffortConfigId || 'reasoning_effort';
+      if (args.reasoningEffort === null) delete configOptionValues[id];
+      else configOptionValues[id] = args.reasoningEffort;
+    }
     const inputConfig = {
       cliType: args.cliType,
       agentType: args.agentType,
@@ -276,8 +299,11 @@ export async function sendTurn(args: {
       // An explicit pick wins; otherwise the turn inherits what the session
       // already used, and an unset value leaves the machine on its default.
       modeId: args.modeId ?? previous.modeId,
-      modelId: args.modelId ?? previous.modelId,
-      configOptionValues: previous.configOptionValues,
+      modelId:
+        args.modelId === null ? undefined : (args.modelId ?? previous.modelId),
+      configOptionValues: Object.keys(configOptionValues).length
+        ? configOptionValues
+        : undefined,
       mcpServerIds: previous.mcpServerIds ?? [],
       taskToolsEnabled: previous.taskToolsEnabled ?? false,
       resume: args.resume,

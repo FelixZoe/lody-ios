@@ -8,6 +8,7 @@ import {
   createSession,
   type CreateSessionArgs,
 } from './create-session';
+import { archiveSession, pinSession } from './archive-session';
 import { Flock } from '@loro-dev/flock-wasm/base64';
 import { StreamsClient } from '@loro-dev/streams-client';
 import { decompress } from 'fzstd';
@@ -456,6 +457,36 @@ Object.assign(globalThis, {
       } finally {
         creating = false;
       }
+    },
+    async archiveSession(args: {
+      workspaceId: string;
+      sessionId: string;
+      archived: boolean;
+    }) {
+      if (args.workspaceId !== workspace || !metaReplica || unhealthy.size)
+        throw new Error('metadata_not_ready');
+      const replica = metaReplica;
+      await archiveSession(args, replica, machineReplicas, getGrant);
+      if (metaReplica === replica) {
+        catalogs.set('meta', projectRows(replica.flock.scan(), 'meta'));
+        publish();
+      }
+      return {};
+    },
+    async pinSession(args: {
+      workspaceId: string;
+      sessionId: string;
+      pinned: boolean;
+    }) {
+      if (args.workspaceId !== workspace || !metaReplica || unhealthy.size)
+        throw new Error('metadata_not_ready');
+      const replica = metaReplica;
+      await pinSession(args, replica);
+      if (metaReplica === replica) {
+        catalogs.set('meta', projectRows(replica.flock.scan(), 'meta'));
+        publish();
+      }
+      return {};
     },
     session(id: string) {
       return openSession(id, workspace, getGrant, send, markDispatch);

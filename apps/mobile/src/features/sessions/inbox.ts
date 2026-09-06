@@ -22,7 +22,8 @@ export const RECENT_LIMIT = 20;
 
 export const activityAt = (session: Session) =>
   session.lastMessageAt ?? Date.parse(session.createdAt);
-const byActivity = (a: Session, b: Session) => activityAt(b) - activityAt(a);
+export const byActivity = (a: Session, b: Session) =>
+  Number(b.pinned) - Number(a.pinned) || activityAt(b) - activityAt(a);
 const badges: Partial<Record<SessionState, string>> = {
   attention: '等你确认',
   failed: '执行失败',
@@ -76,11 +77,25 @@ export function inboxSections(
           action: true,
           disclosure: true,
           navigates: true,
+          actions: [archiveAction(session.archived)],
+          leadingActions: [pinAction(session.pinned)],
         };
       });
     return rows.length ? [{ id: group.id, header: group.header, rows }] : [];
   });
 }
+
+export const archiveAction = (archived: boolean) => ({
+  id: 'archive',
+  title: archived ? '取消归档' : '归档',
+  symbol: archived ? 'tray.and.arrow.up' : 'archivebox',
+});
+export const pinAction = (pinned: boolean) => ({
+  id: 'pin',
+  title: pinned ? '取消置顶' : '置顶',
+  symbol: pinned ? 'pin.slash.fill' : 'pin.fill',
+  tint: 'yellow',
+});
 
 export function sessionRow(
   session: Session,
@@ -113,6 +128,8 @@ export function sessionRow(
     action: true,
     disclosure: true,
     navigates: true,
+    actions: [archiveAction(session.archived)],
+    leadingActions: [pinAction(session.pinned)],
   };
 }
 

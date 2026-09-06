@@ -30,6 +30,8 @@ public final class LodyKitModule: Module {
     AsyncFunction("sessionCreationOptions") { (payload: String, promise: Promise) in self.dataRuntime.command("creationOptions", payload: payload, promise: promise) }.runOnQueue(.main)
     AsyncFunction("localProjects") { (payload: String, promise: Promise) in self.dataRuntime.command("localProjects", payload: payload, promise: promise) }.runOnQueue(.main)
     AsyncFunction("createSession") { (payload: String, promise: Promise) in self.dataRuntime.command("createSession", payload: payload, promise: promise) }.runOnQueue(.main)
+    AsyncFunction("archiveSession") { (payload: String, promise: Promise) in self.dataRuntime.command("archiveSession", payload: payload, promise: promise) }.runOnQueue(.main)
+    AsyncFunction("pinSession") { (payload: String, promise: Promise) in self.dataRuntime.command("pinSession", payload: payload, promise: promise) }.runOnQueue(.main)
     AsyncFunction("sendSessionTurn") { (payload: String, promise: Promise) in self.dataRuntime.sendTurn(payload, promise: promise) }.runOnQueue(.main)
     AsyncFunction("sessionItemDetail") { (payload: String, promise: Promise) in self.dataRuntime.command("itemDetail", payload: payload, promise: promise) }.runOnQueue(.main)
     AsyncFunction("respondSessionPermission") { (payload: String, promise: Promise) in self.dataRuntime.command("respondPermission", payload: payload, promise: promise) }.runOnQueue(.main)
@@ -131,13 +133,15 @@ public final class LodyKitModule: Module {
     }
 
     View(LodyChatView.self) {
-      Events("onSend", "onActivityPress", "onReconnect", "onTitlePress")
+      Events("onSend", "onActivityPress", "onReconnect", "onTitlePress", "onComposerOptionChange")
       Prop("navigationTitle") { (view: LodyChatView, value: String) in view.setNavigationTitle(value) }
+      Prop("navigationSubtitle") { (view: LodyChatView, value: String) in view.setNavigationSubtitle(value) }
       Prop("attachmentContextJSON") { (view: LodyChatView, value: String) in view.setAttachmentContext(value) }
       Prop("entriesJSON") { (view: LodyChatView, value: String) in view.setEntries(value) }
       Prop("processStartId") { (view: LodyChatView, value: String) in view.setProcessStartID(value) }
       Prop("processEntryId") { (view: LodyChatView, value: String) in view.setProcessEntryID(value) }
       Prop("composerJSON") { (view: LodyChatView, value: String) in view.setComposerState(value) }
+      Prop("composerOptionsJSON") { (view: LodyChatView, value: String) in view.setComposerOptions(value) }
       Prop("initialDraft") { (view: LodyChatView, value: String) in view.setInitialDraft(value) }
       Prop("clearDraftToken") { (view: LodyChatView, value: Int) in
         view.clearDraft(token: value)
@@ -150,7 +154,7 @@ public final class LodyKitModule: Module {
       Prop("contentStyle") { (view: LodyGroupedList, value: Bool) in
         view.setContentStyle(value)
       }
-      Events("onRowPress", "onRefresh", "onSegmentChange")
+      Events("onRowPress", "onRowAction", "onRefresh", "onSegmentChange")
       Prop("segments") { (view: LodyGroupedList, labels: [String]) in view.setSegments(labels) }
       Prop("selectedSegment") { (view: LodyGroupedList, index: Int) in view.setSelectedSegment(index) }
       Prop("sections") { (view: LodyGroupedList, sections: [LodyListSection]) in

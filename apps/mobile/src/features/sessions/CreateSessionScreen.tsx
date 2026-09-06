@@ -37,6 +37,7 @@ export type CreatedSession = {
   session: Session;
   draft: string;
   modelId?: string;
+  effort?: string;
   modeId?: string;
 };
 
@@ -146,6 +147,7 @@ function CreateSessionScreen() {
           session: result.session,
           draft,
           modelId: choice.modelId,
+          effort: choice.effort,
           modeId: choice.modeId,
         });
         return;

@@ -16,7 +16,7 @@ import { useCatalog } from '@/cloud/CatalogProvider';
 import { usePalette } from '@/theme/palette';
 import { listPlaceholder } from '@/ui/listState';
 import { inboxSections, projectSections } from './inbox';
-import { newSession, openCatalogRow } from './navigation';
+import { newSession, openCatalogRow, sessionRowAction } from './navigation';
 import { definePage, present, usePageRuntime } from '@/presentation';
 import { showToast } from '@/ui/toast';
 
@@ -97,6 +97,9 @@ export default function InboxScreen() {
             saveInboxExpansion(projectId, next);
             setExpanded((previous) => ({ ...previous, [projectId]: next }));
           } else openCatalogRow(id, catalog);
+        }}
+        onRowAction={({ nativeEvent: { id, actionId } }) => {
+          if (selected) sessionRowAction(selected.id, catalog, id, actionId);
         }}
       />
     </>

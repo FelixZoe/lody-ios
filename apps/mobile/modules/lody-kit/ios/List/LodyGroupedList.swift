@@ -1,6 +1,14 @@
 import ExpoModulesCore
 import UIKit
 
+struct LodyListAction: Record {
+  @Field var id: String = ""
+  @Field var title: String = ""
+  @Field var symbol: String = ""
+  @Field var tint: String = ""
+  @Field var destructive: Bool = false
+}
+
 struct LodyListRow: Record {
   @Field var id: String = ""
   @Field var title: String = ""
@@ -16,6 +24,8 @@ struct LodyListRow: Record {
   @Field var navigates: Bool = false
   @Field var disclosure: Bool = false
   @Field var destructive: Bool = false
+  @Field var actions: [LodyListAction] = []
+  @Field var leadingActions: [LodyListAction] = []
 }
 
 struct LodyListSection: Record {
@@ -50,6 +60,7 @@ private struct ListItemID: Hashable {
 
 final class LodyGroupedList: ExpoView, UICollectionViewDelegate, UISearchBarDelegate {
   let onRowPress = EventDispatcher()
+  let onRowAction = EventDispatcher()
   let onRefresh = EventDispatcher()
   let onSegmentChange = EventDispatcher()
   private let segments = UISegmentedControl(items: [])
@@ -157,6 +168,13 @@ final class LodyGroupedList: ExpoView, UICollectionViewDelegate, UISearchBarDele
       self?.supplementary(in: collection, kind: kind, at: index)
     }
     collection.delegate = self
+    configuration.leadingSwipeActionsConfigurationProvider = { [weak self] indexPath in
+      self?.swipeActions(at: indexPath, leading: true)
+    }
+    configuration.trailingSwipeActionsConfigurationProvider = { [weak self] indexPath in
+      self?.swipeActions(at: indexPath, leading: false)
+    }
+    collection.setCollectionViewLayout(UICollectionViewCompositionalLayout.list(using: configuration), animated: false)
     if #available(iOS 26.0, *) {
       collection.topEdgeEffect.style = .soft
       collection.bottomEdgeEffect.style = .soft
@@ -553,6 +571,21 @@ final class LodyGroupedList: ExpoView, UICollectionViewDelegate, UISearchBarDele
   @objc private func headerPressed(_ gesture: UITapGestureRecognizer) {
     guard let id = gesture.view?.accessibilityIdentifier, !id.isEmpty else { return }
     onRowPress(["id": id])
+  }
+
+  private func swipeActions(at indexPath: IndexPath, leading: Bool) -> UISwipeActionsConfiguration? {
+    guard let row = row(at: indexPath) else { return nil }
+    let actions = leading ? row.leadingActions : row.actions
+    if actions.isEmpty { return nil }
+    return UISwipeActionsConfiguration(actions: actions.map { action in
+      let item = UIContextualAction(style: action.destructive ? .destructive : .normal, title: action.title) { [weak self] _, _, done in
+        self?.onRowAction(["id": row.id, "actionId": action.id])
+        done(true)
+      }
+      item.image = action.symbol.isEmpty ? nil : UIImage(systemName: action.symbol)
+      if let tint = lodyTint(action.tint) { item.backgroundColor = tint }
+      return item
+    })
   }
 
   private func row(at index: IndexPath) -> LodyListRow? {

@@ -5,6 +5,7 @@ func lodyTint(_ value: String) -> UIColor? {
   case "": return nil
   case "warning": return .systemOrange
   case "danger": return .systemRed
+  case "yellow": return .systemYellow
   case "secondary": return .secondaryLabel
   case "tertiary": return .tertiaryLabel
   default: break

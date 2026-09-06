@@ -52,6 +52,7 @@ export type Envelope = {
   reason?: string;
   revision: number;
   awaitingUserSince?: number;
+  composer?: { modelId?: string; modeId?: string; effort?: string };
   entries: EntrySummary[];
 };
 
@@ -252,6 +253,14 @@ export function projectSession(
 ): Envelope {
   const history = doc.getList('history') as LoroList;
   const raw = history.toJSON() as any[];
+  const input = raw.findLast((entry) => entry?.role === 'user')?.inputConfig;
+  const options =
+    input?.configOptionValues && typeof input.configOptionValues === 'object'
+      ? input.configOptionValues
+      : {};
+  const effort = [options.reasoning_effort, options.effort].find(
+    (value) => typeof value === 'string',
+  );
   const summarized = raw.map((entry, index) =>
     summarizeEntry(history, entry, index),
   );
@@ -288,6 +297,19 @@ export function projectSession(
       typeof session?.awaitingUserSince === 'number'
         ? session.awaitingUserSince
         : undefined,
+    ...(input
+      ? {
+          composer: {
+            ...(typeof input.modelId === 'string'
+              ? { modelId: input.modelId }
+              : {}),
+            ...(typeof input.modeId === 'string'
+              ? { modeId: input.modeId }
+              : {}),
+            ...(typeof effort === 'string' ? { effort } : {}),
+          },
+        }
+      : {}),
     entries: ordered.map(({ userTurnId, ...entry }) => entry),
   };
 }

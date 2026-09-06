@@ -2,6 +2,15 @@ import { requireNativeView } from 'expo';
 import type { ComponentType } from 'react';
 import type { NativeSyntheticEvent, ViewProps } from 'react-native';
 
+export type NativeListAction = {
+  id: string;
+  title: string;
+  symbol?: string;
+  /** Semantic name (warning/danger/yellow) or `#RRGGBB`; destructive stays system red. */
+  tint?: string;
+  destructive?: boolean;
+};
+
 export type NativeListRow = {
   id: string;
   title: string;
@@ -20,6 +29,9 @@ export type NativeListRow = {
   disclosure?: boolean;
   navigates?: boolean;
   destructive?: boolean;
+  /** Trailing swipe actions. */
+  actions?: NativeListAction[];
+  leadingActions?: NativeListAction[];
 };
 
 export type NativeListSection = {
@@ -50,5 +62,8 @@ export const NativeGroupedList: ComponentType<
     refreshing?: boolean;
     onRefresh?: () => void;
     onRowPress: (event: NativeSyntheticEvent<{ id: string }>) => void;
+    onRowAction?: (
+      event: NativeSyntheticEvent<{ id: string; actionId: string }>,
+    ) => void;
   }
 > = requireNativeView('LodyKit', 'LodyGroupedList');

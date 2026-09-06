@@ -13,6 +13,7 @@ export type Session = {
   title: string;
   status: string;
   archived: boolean;
+  pinned: boolean;
   projectId: string;
   createdAt: string;
   lastMessageAt?: number;
@@ -114,6 +115,7 @@ export function projectRows(rows: Row[], mode: string): Catalog {
       title: text(value.title) || '未命名会话',
       status: text(value.status) || text(object(value.status).type) || '未知',
       archived: value.isArchived === true,
+      pinned: value.isPinned === true,
       projectId,
       createdAt: text(value.createdAt),
       lastMessageAt: stamp(value.lastMessageAt),
@@ -151,6 +153,7 @@ export type Capability = {
   modes: CapabilityChoice[];
   /** modelId -> reasoning effort levels; only some agents publish this. */
   reasoningEfforts: Record<string, string[]>;
+  reasoningEffortConfigId?: string;
 };
 
 export type CreationOptions = {
