@@ -18,7 +18,7 @@ export function sessionState(status: string, archived = false): SessionState {
 export const stateLabel: Record<SessionState, string> = {
   live: '进行中',
   attention: '等待确认',
-  failed: '需要关注',
+  failed: '执行失败',
   idle: '待命',
   done: '已完成',
   archived: '已归档',

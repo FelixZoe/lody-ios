@@ -18,6 +18,8 @@ struct LodyListRow: Record {
 struct LodyListSection: Record {
   @Field var id: String = ""
   @Field var header: String = ""
+  @Field var headerValue: String = ""
+  @Field var headerActionId: String = ""
   @Field var footer: String = ""
   @Field var rows: [LodyListRow] = []
 }
@@ -30,9 +32,19 @@ private final class ListAppearanceController: UIViewController {
   }
 }
 
-final class LodyGroupedList: ExpoView, UICollectionViewDataSource, UICollectionViewDelegate {
+private final class SectionHeaderTap: UITapGestureRecognizer {}
+
+private struct ListItemID: Hashable {
+  let section: String
+  let row: String
+}
+
+final class LodyGroupedList: ExpoView, UICollectionViewDelegate {
   let onRowPress = EventDispatcher()
   let onRefresh = EventDispatcher()
+  let onSegmentChange = EventDispatcher()
+  private let segments = UISegmentedControl(items: [])
+  private var selectedSegment = 0
   private let appearance = ListAppearanceController()
   private weak var scrollOwner: UIViewController?
   private var sections: [LodyListSection] = []
@@ -43,6 +55,20 @@ final class LodyGroupedList: ExpoView, UICollectionViewDataSource, UICollectionV
 
   private static var accent: UIColor = .systemBlue
   private var transparent = false
+  private var contentStyle = false
+  private var rowsByID: [ListItemID: LodyListRow] = [:]
+  private var dataSource: UICollectionViewDiffableDataSource<String, ListItemID>!
+
+  private static let restingCard = UIColor { traits in
+    traits.userInterfaceStyle == .dark
+      ? UIColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 1)
+      : .white
+  }
+  private static let selectedCard = UIColor { traits in
+    traits.userInterfaceStyle == .dark
+      ? UIColor(red: 0.17, green: 0.17, blue: 0.18, alpha: 1)
+      : UIColor(red: 0.898, green: 0.898, blue: 0.918, alpha: 1)
+  }
 
   private let registration = UICollectionView.CellRegistration<UICollectionViewListCell, LodyListRow> { cell, _, row in
     let accent = LodyGroupedList.accent
@@ -95,7 +121,13 @@ final class LodyGroupedList: ExpoView, UICollectionViewDataSource, UICollectionV
     collection.contentInsetAdjustmentBehavior = .automatic
     collection.alwaysBounceVertical = true
     collection.keyboardDismissMode = .onDrag
-    collection.dataSource = self
+    dataSource = UICollectionViewDiffableDataSource<String, ListItemID>(collectionView: collection) { [weak self] collection, index, id in
+      guard let self, let row = self.rowsByID[id] else { return nil }
+      return self.cell(in: collection, at: index, row: row)
+    }
+    dataSource.supplementaryViewProvider = { [weak self] collection, kind, index in
+      self?.supplementary(in: collection, kind: kind, at: index)
+    }
     collection.delegate = self
     if #available(iOS 26.0, *) {
       collection.topEdgeEffect.style = .soft
@@ -111,6 +143,9 @@ final class LodyGroupedList: ExpoView, UICollectionViewDataSource, UICollectionV
     placeholder.isHidden = true
     addSubview(collection)
     addSubview(placeholder)
+    segments.isHidden = true
+    segments.addTarget(self, action: #selector(segmentChanged), for: .valueChanged)
+    addSubview(segments)
     appearance.view = UIView(frame: .zero)
     appearance.view.isUserInteractionEnabled = false
     appearance.onWillAppear = { [weak self] animated, coordinator in
@@ -122,6 +157,7 @@ final class LodyGroupedList: ExpoView, UICollectionViewDataSource, UICollectionV
     super.layoutSubviews()
     collection.frame = bounds
     let insets = collection.adjustedContentInset
+    segments.frame = CGRect(x: 20, y: insets.top - collection.contentInset.top + 8, width: max(0, bounds.width - 40), height: 44)
     placeholder.frame = bounds.inset(by: UIEdgeInsets(top: insets.top + 24, left: 32, bottom: insets.bottom + 24, right: 32))
     attachScrollOwner()
   }
@@ -167,23 +203,83 @@ final class LodyGroupedList: ExpoView, UICollectionViewDataSource, UICollectionV
     }
   }
 
+  func setSegments(_ labels: [String]) {
+    segments.removeAllSegments()
+    for (index, label) in labels.enumerated() { segments.insertSegment(withTitle: label, at: index, animated: false) }
+    segments.selectedSegmentIndex = selectedSegment
+    segments.isHidden = labels.isEmpty
+    collection.contentInset.top = labels.isEmpty ? 0 : 60
+    setNeedsLayout()
+  }
+
+  func setSelectedSegment(_ index: Int) {
+    selectedSegment = index
+    segments.selectedSegmentIndex = index
+  }
+
+  @objc private func segmentChanged() {
+    selectedSegment = segments.selectedSegmentIndex
+    onSegmentChange(["index": selectedSegment])
+    collection.setContentOffset(CGPoint(x: 0, y: -collection.adjustedContentInset.top), animated: false)
+  }
+
   func setSections(_ value: [LodyListSection]) {
-    let selectedID = collection.indexPathsForSelectedItems?.first.map { sections[$0.section].rows[$0.item].id }
+    let selectedID = collection.indexPathsForSelectedItems?.first.flatMap { dataSource.itemIdentifier(for: $0) }
+    let previous = dataSource.snapshot()
     sections = value
-    collection.reloadData()
-    if let selectedID, let index = indexPath(for: selectedID) {
-      collection.selectItem(at: index, animated: false, scrollPosition: [])
+    rowsByID = Dictionary(value.flatMap { section in
+      section.rows.map { (ListItemID(section: section.id, row: $0.id), $0) }
+    }, uniquingKeysWith: { _, latest in latest })
+    var snapshot = NSDiffableDataSourceSnapshot<String, ListItemID>()
+    for section in value {
+      snapshot.appendSections([section.id])
+      snapshot.appendItems(section.rows.map { ListItemID(section: section.id, row: $0.id) }, toSection: section.id)
+    }
+    let existing = Set(previous.itemIdentifiers)
+    snapshot.reconfigureItems(snapshot.itemIdentifiers.filter { existing.contains($0) })
+    dataSource.apply(snapshot, animatingDifferences: window != nil && !previous.sectionIdentifiers.isEmpty && !UIAccessibility.isReduceMotionEnabled) { [weak self] in
+      guard let self else { return }
+      if let selectedID, let index = self.dataSource.indexPath(for: selectedID) {
+        self.collection.selectItem(at: index, animated: false, scrollPosition: [])
+      }
+      for index in self.collection.indexPathsForVisibleSupplementaryElements(ofKind: UICollectionView.elementKindSectionHeader) {
+        if let view = self.collection.supplementaryView(forElementKind: UICollectionView.elementKindSectionHeader, at: index) as? UICollectionViewListCell,
+           let section = self.section(at: index.section) {
+          self.configureSupplementary(view, section: section, header: true)
+        }
+      }
     }
     updatePlaceholder()
   }
 
+  func setContentStyle(_ value: Bool) {
+    guard value != contentStyle else { return }
+    contentStyle = value
+    var configuration = UICollectionLayoutListConfiguration(appearance: value ? .plain : .insetGrouped)
+    configuration.headerMode = .supplementary
+    configuration.footerMode = .supplementary
+    if value { configuration.backgroundColor = .clear }
+    let layout = UICollectionViewCompositionalLayout { _, environment in
+      let section = NSCollectionLayoutSection.list(using: configuration, layoutEnvironment: environment)
+      if value {
+        section.contentInsets.top = 12
+        section.contentInsets.bottom = 12
+        for item in section.boundarySupplementaryItems { item.pinToVisibleBounds = false }
+      }
+      return section
+    }
+    collection.setCollectionViewLayout(layout, animated: false)
+    collection.reloadData()
+  }
+
   /// A sheet paints its own material. Dropping the list's ground lets that
-  /// material show between groups; the cells keep their grouped background so
-  /// rows still read as cards.
+  /// material show between groups; cells take `lodyOpaqueCard` so rows still
+  /// read as cards.
   func setTransparent(_ value: Bool) {
     guard value != transparent else { return }
     transparent = value
     collection.backgroundColor = value ? .clear : .systemGroupedBackground
+    collection.reloadData()
   }
 
   func setAccent(_ value: String) {
@@ -206,7 +302,7 @@ final class LodyGroupedList: ExpoView, UICollectionViewDataSource, UICollectionV
   }
 
   private func updatePlaceholder() {
-    let empty = sections.allSatisfy { $0.rows.isEmpty }
+    let empty = sections.isEmpty || sections.allSatisfy { $0.rows.isEmpty && $0.headerActionId.isEmpty }
     placeholder.text = placeholderText
     placeholder.isHidden = !empty || placeholderText.isEmpty
   }
@@ -215,55 +311,112 @@ final class LodyGroupedList: ExpoView, UICollectionViewDataSource, UICollectionV
     onRefresh([:])
   }
 
-  func numberOfSections(in collectionView: UICollectionView) -> Int { sections.count }
-  func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int { sections[section].rows.count }
-  func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
-    let cell = collectionView.dequeueConfiguredReusableCell(
-      using: registration,
-      for: indexPath,
-      item: sections[indexPath.section].rows[indexPath.item]
-    )
-    if transparent {
-      // On a glass sheet UIKit renders the default grouped fill as a vibrant
-      // wash, so content behind the sheet bleeds through the row. Rows have to
-      // opt back into an opaque card.
-      var background = UIBackgroundConfiguration.listGroupedCell()
-      background.backgroundColor = .secondarySystemGroupedBackground
-      cell.backgroundConfiguration = background
+  private func cell(in collectionView: UICollectionView, at indexPath: IndexPath, row: LodyListRow) -> UICollectionViewListCell {
+    let cell = collectionView.dequeueConfiguredReusableCell(using: registration, for: indexPath, item: row)
+    cell.configurationUpdateHandler = nil
+    cell.automaticallyUpdatesBackgroundConfiguration = true
+    if contentStyle {
+      if var content = cell.contentConfiguration as? UIListContentConfiguration {
+        content.textProperties.numberOfLines = 2
+        content.secondaryTextProperties.font = .preferredFont(forTextStyle: .footnote)
+        content.directionalLayoutMargins = .init(top: 12, leading: 22, bottom: 12, trailing: 22)
+        cell.contentConfiguration = content
+      }
+      cell.configurationUpdateHandler = { cell, state in
+        var background = UIBackgroundConfiguration.listPlainCell().updated(for: state)
+        if !state.isHighlighted && !state.isSelected { background.backgroundColor = .clear }
+        cell.backgroundConfiguration = background
+      }
+    } else if transparent {
+      // A static backgroundConfiguration freezes the cell's appearance, so the
+      // highlighted and selected states stop rendering. The update handler
+      // keeps UIKit's state resolution and only forces the resting color to be
+      // opaque, which the glass sheet context otherwise makes translucent.
+      cell.configurationUpdateHandler = { cell, state in
+        var background = UIBackgroundConfiguration.listGroupedCell().updated(for: state)
+        background.backgroundColor = state.isHighlighted || state.isSelected
+          ? LodyGroupedList.selectedCard
+          : LodyGroupedList.restingCard
+        cell.backgroundConfiguration = background
+      }
+    } else {
+      cell.backgroundConfiguration = UIBackgroundConfiguration.listGroupedCell()
     }
     return cell
   }
-  func collectionView(_ collectionView: UICollectionView, viewForSupplementaryElementOfKind kind: String, at indexPath: IndexPath) -> UICollectionReusableView {
-    let section = sections[indexPath.section]
+
+  private func section(at index: Int) -> LodyListSection? {
+    let identifiers = dataSource.snapshot().sectionIdentifiers
+    guard identifiers.indices.contains(index) else { return nil }
+    return sections.first { $0.id == identifiers[index] }
+  }
+
+  private func supplementary(in collectionView: UICollectionView, kind: String, at indexPath: IndexPath) -> UICollectionReusableView? {
+    guard let section = section(at: indexPath.section) else { return nil }
     let header = kind == UICollectionView.elementKindSectionHeader
     let view = collectionView.dequeueConfiguredReusableSupplementary(
       using: header ? headerRegistration : footerRegistration,
       for: indexPath
     )
+    configureSupplementary(view, section: section, header: header)
+    return view
+  }
+
+  private func configureSupplementary(_ view: UICollectionViewListCell, section: LodyListSection, header: Bool) {
     let text = header ? section.header : section.footer
+    view.accessories = []
+    view.accessibilityIdentifier = header ? section.headerActionId : nil
+    view.accessibilityTraits = header ? .header : .staticText
+    view.isUserInteractionEnabled = header && !section.headerActionId.isEmpty
     guard !text.isEmpty else {
       view.contentConfiguration = nil
-      return view
+      return
     }
     var content = header ? UIListContentConfiguration.groupedHeader() : UIListContentConfiguration.groupedFooter()
     content.text = text
     content.textProperties.numberOfLines = 0
+    if contentStyle {
+      content.directionalLayoutMargins = .init(top: 10, leading: 22, bottom: 10, trailing: 22)
+      if header {
+        let title = NSMutableAttributedString(string: text, attributes: [.font: UIFont.preferredFont(forTextStyle: .subheadline), .foregroundColor: UIColor.secondaryLabel])
+        if !section.headerValue.isEmpty {
+          title.append(NSAttributedString(string: "  " + section.headerValue, attributes: [.font: UIFont.preferredFont(forTextStyle: .caption1), .foregroundColor: UIColor.tertiaryLabel]))
+        }
+        content.text = nil
+        content.attributedText = title
+        content.directionalLayoutMargins.top = 14
+        content.directionalLayoutMargins.bottom = 14
+      }
+    }
+    if header && !section.headerActionId.isEmpty {
+      view.accessibilityTraits = [.header, .button]
+      view.accessories = [.disclosureIndicator()]
+      if !(view.gestureRecognizers?.contains { $0 is SectionHeaderTap } ?? false) {
+        view.addGestureRecognizer(SectionHeaderTap(target: self, action: #selector(headerPressed(_:))))
+      }
+    }
     view.contentConfiguration = content
-    return view
+    view.backgroundConfiguration = .clear()
   }
+
+  @objc private func headerPressed(_ gesture: UITapGestureRecognizer) {
+    guard let id = gesture.view?.accessibilityIdentifier, !id.isEmpty else { return }
+    onRowPress(["id": id])
+  }
+
+  private func row(at index: IndexPath) -> LodyListRow? {
+    dataSource.itemIdentifier(for: index).flatMap { rowsByID[$0] }
+  }
+
   func collectionView(_ collectionView: UICollectionView, shouldSelectItemAt indexPath: IndexPath) -> Bool {
-    sections[indexPath.section].rows[indexPath.item].action
+    row(at: indexPath)?.action ?? false
   }
   func collectionView(_ collectionView: UICollectionView, shouldHighlightItemAt indexPath: IndexPath) -> Bool {
-    sections[indexPath.section].rows[indexPath.item].action
+    row(at: indexPath)?.action ?? false
   }
   func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-    let row = sections[indexPath.section].rows[indexPath.item]
-    if row.navigates {
-      collectionView.selectItem(at: indexPath, animated: false, scrollPosition: [])
-    } else {
-      collectionView.deselectItem(at: indexPath, animated: true)
-    }
+    guard let row = row(at: indexPath) else { return }
+    if !row.navigates { collectionView.deselectItem(at: indexPath, animated: true) }
     onRowPress(["id": row.id])
   }
 
@@ -278,7 +431,7 @@ final class LodyGroupedList: ExpoView, UICollectionViewDataSource, UICollectionV
 
   private func deselectOnReturn(animated: Bool, coordinator: UIViewControllerTransitionCoordinator?) {
     guard let index = collection.indexPathsForSelectedItems?.first else { return }
-    let id = sections[index.section].rows[index.item].id
+    guard let id = row(at: index)?.id else { return }
     guard let coordinator else {
       collection.deselectItem(at: index, animated: animated)
       return

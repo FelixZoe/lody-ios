@@ -6,7 +6,7 @@ import {
   createSession,
   sessionCreationOptions,
 } from '@lody-ios/kit';
-import { definePage, present, usePageRuntime } from '@/presentation';
+import { definePage, usePageRuntime } from '@/presentation';
 import { useAuth } from '@/features/auth/AuthProvider';
 import type { CreationOptions, Project, Session } from '@/cloud/model';
 import { usePalette } from '@/theme/palette';
@@ -17,19 +17,26 @@ import { showToast } from '@/ui/toast';
 import { draftTitle } from './draftTitle';
 import { pickerPage } from './PickerScreen';
 
-type Params = { workspaceId: string; projects: Project[] };
+type Params = {
+  workspaceId: string;
+  projects: Project[];
+  projectId?: string;
+};
 
 /** Unassigned projects carry no working directory, so no session can start there. */
 const creatable = (project: Project) => !project.id.endsWith(':unassigned');
 export type CreatedSession = { session: Session; draft: string };
 
 function CreateSessionScreen() {
-  const { params, finish } = usePageRuntime<Params, CreatedSession>();
+  const { params, finish, push } = usePageRuntime<Params, CreatedSession>();
   const { account } = useAuth();
   const colors = usePalette();
   const projects = params.projects.filter(creatable);
-  const [projectId, setProjectId] = useState(projects[0]?.id ?? '');
+  const [projectId, setProjectId] = useState(
+    params.projectId ?? projects[0]?.id ?? '',
+  );
   const [options, setOptions] = useState<CreationOptions>();
+  const [machineId, setMachineId] = useState('');
   const [agentKey, setAgentKey] = useState('');
   const [branch, setBranch] = useState('');
   const [draft, setDraft] = useState('');
@@ -71,44 +78,21 @@ function CreateSessionScreen() {
     };
   }, [params.workspaceId, projectId, revision]);
 
-  const agent = options?.agents.find(
-    (a) => `${a.machineId}:${a.id}` === agentKey,
+  // A local project pins its own machine at the projection layer, so only a
+  // GitHub project actually has a machine to choose.
+  const machines = [
+    ...new Map(
+      (options?.agents ?? []).map((a) => [
+        a.machineId,
+        { id: a.machineId, name: a.machineName },
+      ]),
+    ).values(),
+  ];
+  const machine = machines.find((m) => m.id === machineId) ?? machines[0];
+  const agents = (options?.agents ?? []).filter(
+    (a) => a.machineId === machine?.id,
   );
-
-  async function pickProject() {
-    const result = await present(pickerPage, {
-      title: '选择项目',
-      header: '项目',
-      selectedId: projectId,
-      options: projects.map((p) => ({
-        id: p.id,
-        title: p.name,
-        subtitle: p.rootPath || '云端项目',
-        subtitleMono: !!p.rootPath,
-      })),
-      placeholder: '还没有项目，先在电脑上打开一个。',
-    });
-    if (result.status === 'completed') setProjectId(result.value);
-  }
-
-  async function pickAgent() {
-    if (!options) {
-      setRevision((n) => n + 1);
-      return;
-    }
-    const result = await present(pickerPage, {
-      title: '选择助手',
-      header: '助手',
-      selectedId: agentKey,
-      options: options.agents.map((a) => ({
-        id: `${a.machineId}:${a.id}`,
-        title: a.name,
-        subtitle: a.machineName,
-      })),
-      placeholder: '没有可用的助手配置，请先在电脑上添加。',
-    });
-    if (result.status === 'completed') setAgentKey(result.value);
-  }
+  const agent = agents.find((a) => `${a.machineId}:${a.id}` === agentKey);
 
   async function submit() {
     const ready =
@@ -158,41 +142,131 @@ function CreateSessionScreen() {
   const sections: NativeListSection[] = [
     {
       id: 'project',
-      header: '项目',
       rows: [
         {
           id: 'project',
           title: project?.name ?? '选择项目',
-          subtitle: project?.rootPath || (project ? '云端项目' : undefined),
-          subtitleMono: !!project?.rootPath,
+          subtitle: '项目',
           image: 'folder',
           action: true,
           disclosure: true,
+          navigates: true,
         },
       ],
     },
+    ...(github
+      ? [
+          {
+            id: 'machine',
+            rows: [
+              {
+                id: 'machine',
+                title: machine?.name ?? (loading ? '读取中…' : '选择电脑'),
+                subtitle: '电脑',
+                image: 'desktopcomputer',
+                action: true,
+                disclosure: true,
+                navigates: true,
+              },
+            ],
+          },
+        ]
+      : []),
     {
       id: 'agent',
-      header: '助手',
+      // Model and mode live in the session's inputConfig and are inherited from
+      // the previous user turn; a new session has none, so the machine decides.
       footer: loading
         ? '正在读取电脑配置…'
         : agent
-          ? '模型与运行模式使用助手默认值。'
+          ? '模型与运行模式使用助手默认值，稍后可在电脑上更改。'
           : '点按重新读取电脑配置。',
       rows: [
         {
           id: 'agent',
           title: agent?.name ?? (loading ? '读取中…' : '选择助手'),
-          subtitle: agent?.machineName,
-          image: 'desktopcomputer',
+          subtitle: github ? '助手' : machine?.name,
+          image: 'sparkles',
           action: true,
           disclosure: true,
+          navigates: true,
+        },
+        {
+          id: 'model',
+          title: '默认模型',
+          subtitle: '由助手配置决定',
+          image: 'cpu',
         },
       ],
     },
   ];
 
-  return (
+  async function pickProject() {
+    const result = await push(
+      pickerPage,
+      {
+        title: '选择项目',
+        header: '项目',
+        selectedId: projectId,
+        placeholder: '还没有项目，先在电脑上打开一个。',
+        options: projects.map((p) => ({
+          id: p.id,
+          title: p.name,
+          subtitle: p.rootPath || '云端项目',
+          subtitleMono: !!p.rootPath,
+        })),
+      },
+      { title: '选择项目' },
+    );
+    if (result.status === 'completed') setProjectId(result.value);
+  }
+
+  async function pickMachine() {
+    if (!options) {
+      setRevision((n) => n + 1);
+      return;
+    }
+    const result = await push(
+      pickerPage,
+      {
+        title: '选择电脑',
+        header: '电脑',
+        selectedId: machine?.id,
+        placeholder: '没有已连接的电脑。',
+        options: machines.map((m) => ({ id: m.id, title: m.name })),
+      },
+      { title: '选择电脑' },
+    );
+    if (result.status !== 'completed') return;
+    setMachineId(result.value);
+    const first = options.agents.find((a) => a.machineId === result.value);
+    setAgentKey(first ? `${first.machineId}:${first.id}` : '');
+  }
+
+  async function pickAgent() {
+    if (!options) {
+      setRevision((n) => n + 1);
+      return;
+    }
+    const result = await push(
+      pickerPage,
+      {
+        title: '选择助手',
+        header: '助手',
+        selectedId: agentKey,
+        placeholder: '没有可用的助手配置，请先在电脑上添加。',
+        options: agents.map((a) => ({
+          id: `${a.machineId}:${a.id}`,
+          title: a.name,
+          subtitle: a.machineName,
+        })),
+      },
+      { title: '选择助手' },
+    );
+    if (result.status === 'completed') setAgentKey(result.value);
+  }
+
+  const form = (
     <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
       <NativeGroupedList
         style={{ flex: 1 }}
@@ -201,7 +275,9 @@ function CreateSessionScreen() {
         sections={sections}
         placeholder=""
         onRowPress={({ nativeEvent }) => {
+          if (sending || uncertain) return;
           if (nativeEvent.id === 'project') void pickProject();
+          if (nativeEvent.id === 'machine') void pickMachine();
           if (nativeEvent.id === 'agent') void pickAgent();
         }}
       />
@@ -238,15 +314,24 @@ function CreateSessionScreen() {
           value={draft}
           onChangeText={setDraft}
           onSubmit={() => void submit()}
-          editable={!!agent && !uncertain}
+          editable={!uncertain}
+          submitDisabled={!agent || loading}
           sending={sending}
         />
         <AppText variant="meta" style={{ textAlign: 'center' }}>
-          发送即创建会话，标题取自第一条消息。
+          {uncertain
+            ? '请关闭并查看会话列表，确认创建结果。'
+            : loading
+              ? '正在准备助手，你可以先写下任务。'
+              : !agent
+                ? '选择可用的助手后即可发送。'
+                : '发送后开始新会话'}
         </AppText>
       </View>
     </KeyboardAvoidingView>
   );
+
+  return form;
 }
 
 export const createSessionPage = definePage<Params, CreatedSession>({

@@ -1,6 +1,15 @@
 import { PlatformColor, useColorScheme } from 'react-native';
 import { DarkTheme, DefaultTheme } from 'expo-router';
-import { accent, type ThemeName } from './tokens';
+import {
+  accent,
+  danger,
+  label,
+  onAccent,
+  opaqueCard,
+  separator,
+  systemGroupedBackground,
+  type ThemeName,
+} from './tokens';
 
 export type ColorRole =
   | 'label'
@@ -29,7 +38,7 @@ export function usePalette() {
     card: PlatformColor('secondarySystemGroupedBackground'),
     separator: PlatformColor('separator'),
     fill: PlatformColor('tertiarySystemFill'),
-    onAccent: '#FFFFFF',
+    onAccent,
   } as const;
 }
 
@@ -42,11 +51,11 @@ export const navigationThemes = {
     colors: {
       ...DefaultTheme.colors,
       primary: accent.light,
-      background: '#F2F2F7',
-      card: '#FFFFFF',
-      text: '#000000',
-      border: '#C6C6C8',
-      notification: '#FF3B30',
+      background: systemGroupedBackground.light,
+      card: opaqueCard.light,
+      text: label.light,
+      border: separator.light,
+      notification: danger.light,
     },
   },
   dark: {
@@ -54,11 +63,11 @@ export const navigationThemes = {
     colors: {
       ...DarkTheme.colors,
       primary: accent.dark,
-      background: '#000000',
-      card: '#1C1C1E',
-      text: '#FFFFFF',
-      border: '#38383A',
-      notification: '#FF453A',
+      background: systemGroupedBackground.dark,
+      card: opaqueCard.dark,
+      text: label.dark,
+      border: separator.dark,
+      notification: danger.dark,
     },
   },
 } as const;

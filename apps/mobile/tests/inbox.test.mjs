@@ -126,3 +126,52 @@ test('the session title comes from the first line of the first message', () => {
   assert.equal(draftTitle('a'.repeat(40)), `${'a'.repeat(24)}…`);
   assert.equal(draftTitle('\n\n真正的第一行'), '真正的第一行');
 });
+
+test('project previews show three newest non-archived sessions and keep empty projects reachable', async () => {
+  const { projectSections } = await import('../src/features/sessions/inbox.ts');
+  const data = catalog(
+    [
+      ...Array.from({ length: 5 }, (_, i) =>
+        session(`s${i}`, 'completed', {
+          createdAt: `2026-09-0${i + 1}T10:00:00Z`,
+        }),
+      ),
+      session('archived', 'completed', {
+        archived: true,
+        createdAt: '2026-09-06T10:00:00Z',
+      }),
+    ],
+    [
+      { id: 'p1', name: 'Lody' },
+      { id: 'p2', name: 'Empty' },
+    ],
+  );
+  const [group, empty] = projectSections(data, ACCENT);
+  assert.deepEqual(
+    group.rows.map((row) => row.id),
+    ['s4', 's3', 's2'],
+  );
+  assert.equal(group.headerValue, '5');
+  assert.equal(group.headerActionId, 'project:p1');
+  assert.equal(empty.rows.length, 0);
+  assert.equal(empty.headerActionId, 'project:p2');
+  assert.equal(empty.footer, '暂无会话');
+});
+
+test('search finds empty projects and archived sessions without the inbox limit', async () => {
+  const { searchSections } = await import('../src/features/sessions/inbox.ts');
+  const data = catalog(
+    Array.from({ length: 25 }, (_, i) =>
+      session(`work-${i}`, 'completed', { archived: true }),
+    ),
+    [
+      { id: 'p1', name: 'Lody' },
+      { id: 'p2', name: 'Lody empty' },
+    ],
+  );
+  assert.deepEqual(searchSections(data, ' ', ACCENT), []);
+  const found = searchSections(data, ' LODY ', ACCENT);
+  assert.equal(found[0].rows.length, 2);
+  assert.equal(found[1].rows.length, 25);
+  assert.match(found[1].rows[0].subtitle, /已归档/);
+});

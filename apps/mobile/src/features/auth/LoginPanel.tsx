@@ -6,25 +6,25 @@ export function LoginPanel() {
   const auth = useAuth(),
     colors = usePalette();
   return (
-    <View style={{ gap: 24, paddingTop: 32 }}>
+    <View style={{ gap: 24, paddingTop: 20 }}>
       <Image
         accessibilityIgnoresInvertColors
         accessible
         accessibilityLabel="Lody"
         source={require('../../../assets/logo.png')}
-        style={{ width: 72, height: 72 }}
+        style={{ width: 56, height: 56 }}
       />
       <View style={{ gap: 12 }}>
         <Text
           style={{
             color: colors.label,
-            fontSize: 34,
+            fontSize: 24,
             fontWeight: '700',
-            lineHeight: 43,
+            lineHeight: 32,
             letterSpacing: -0.7,
           }}
         >
-          把工作，{'\n'}带在身边。
+          把工作，带在身边。
         </Text>
         <Text
           style={{ color: colors.secondaryLabel, fontSize: 16, lineHeight: 25 }}
@@ -61,6 +61,9 @@ export function LoginPanel() {
       {auth.busy ? (
         <View style={{ gap: 12, alignItems: 'center' }}>
           <ActivityIndicator color={colors.accent} />
+          <Text style={{ color: colors.secondaryLabel }}>
+            {auth.code ? '等待浏览器确认授权…' : '正在连接…'}
+          </Text>
           <Button testID="auth-cancel" onPress={auth.cancel}>
             取消
           </Button>

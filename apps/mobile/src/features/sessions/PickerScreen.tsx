@@ -1,4 +1,3 @@
-import { Stack } from 'expo-router';
 import { NativeGroupedList, type NativeListSection } from '@lody-ios/kit';
 import { definePage, usePageRuntime } from '@/presentation';
 import { usePalette } from '@/theme/palette';
@@ -9,6 +8,7 @@ export type PickerOption = {
   subtitle?: string;
   subtitleMono?: boolean;
 };
+
 type Params = {
   title: string;
   header?: string;
@@ -35,17 +35,14 @@ function PickerScreen() {
     },
   ];
   return (
-    <>
-      <Stack.Screen options={{ title: params.title }} />
-      <NativeGroupedList
-        style={{ flex: 1 }}
-        accent={colors.accent}
-        transparent
-        sections={sections}
-        placeholder={params.placeholder ?? '没有可选项'}
-        onRowPress={({ nativeEvent }) => finish(nativeEvent.id)}
-      />
-    </>
+    <NativeGroupedList
+      style={{ flex: 1 }}
+      accent={colors.accent}
+      transparent
+      sections={sections}
+      placeholder={params.placeholder ?? '没有可选项'}
+      onRowPress={({ nativeEvent }) => finish(nativeEvent.id)}
+    />
   );
 }
 
@@ -56,5 +53,5 @@ export const pickerPage = definePage<Params, string>({
   parseRouteParams: () => {
     throw new Error('请从表单打开');
   },
-  presentation: { style: 'pageSheet', headerVariant: 'transparent' },
+  presentation: { style: 'push', headerVariant: 'transparent' },
 });

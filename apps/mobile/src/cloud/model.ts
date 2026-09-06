@@ -118,6 +118,23 @@ export function projectRows(rows: Row[], mode: string): Catalog {
   };
 }
 
+export type CapabilityChoice = {
+  id: string;
+  name: string;
+  description?: string;
+};
+
+/** Published per machine under `acpCapability`, keyed by cliType + agentType. */
+export type Capability = {
+  machineId: string;
+  cliType: string;
+  agentType: string;
+  models: CapabilityChoice[];
+  modes: CapabilityChoice[];
+  /** modelId -> reasoning effort levels; only some agents publish this. */
+  reasoningEfforts: Record<string, string[]>;
+};
+
 export type CreationOptions = {
   sessionId: string;
   project: Project;
@@ -129,4 +146,18 @@ export type CreationOptions = {
     cliType: string;
     agentType: string;
   }[];
+  capabilities: Capability[];
 };
+
+export function capabilityFor(
+  options: Pick<CreationOptions, 'capabilities'> | undefined,
+  agent: { machineId: string; cliType: string; agentType: string } | undefined,
+) {
+  if (!options || !agent) return undefined;
+  return options.capabilities.find(
+    (c) =>
+      c.machineId === agent.machineId &&
+      c.cliType === agent.cliType &&
+      c.agentType === agent.agentType,
+  );
+}

@@ -143,6 +143,19 @@ final class DataRuntime: NSObject, WKScriptMessageHandler, WKNavigationDelegate 
   func sendTurn(_ payload: String, promise: Promise) {
     command("sendTurn", payload: payload, promise: promise)
   }
+  /// The command guard matches the payload's workspace, which a diagnostic has
+  /// no way to know. Inject the runtime's own.
+  func debugProbeSchema(promise: Promise) {
+    guard let workspace, let payload = try? String(
+      data: JSONSerialization.data(withJSONObject: ["workspaceId": workspace]),
+      encoding: .utf8
+    ) else {
+      promise.reject("not_ready", "尚未连接工作区")
+      return
+    }
+    command("probeSchema", payload: payload, promise: promise)
+  }
+
   func command(_ method: String, payload: String, promise: Promise) {
     guard health.ready, let view = webView, let data = payload.data(using: .utf8), data.count <= 128 * 1024,
           let args = try? JSONSerialization.jsonObject(with: data) as? [String: Any], (method != "sendTurn" || args["sessionId"] as? String == sessionId),

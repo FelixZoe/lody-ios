@@ -3,6 +3,7 @@ import UIKit
 import SafariServices
 
 public final class LodyKitModule: Module {
+  private let localStore = LocalStore()
   private var authBrowser: SFSafariViewController?
 
   private lazy var dataRuntime = DataRuntime { [weak self] event in self?.sendEvent("onDataRuntime", event) }
@@ -11,6 +12,13 @@ public final class LodyKitModule: Module {
     Name("LodyKit")
 
     Events("onAppActive", "onDataRuntime")
+    OnCreate {
+      #if DEBUG
+      if ProcessInfo.processInfo.arguments.contains("--lody-offline") {
+        URLProtocol.registerClass(OfflineProbe.self)
+      }
+      #endif
+    }
 
     AsyncFunction("watchCatalog") { (workspace: String, owner: String) in
       guard !workspace.isEmpty, !owner.isEmpty else { throw NSError(domain: "InvalidSubscription", code: 1) }
@@ -23,6 +31,13 @@ public final class LodyKitModule: Module {
     AsyncFunction("createSession") { (payload: String, promise: Promise) in self.dataRuntime.command("createSession", payload: payload, promise: promise) }.runOnQueue(.main)
     AsyncFunction("sendSessionTurn") { (payload: String, promise: Promise) in self.dataRuntime.sendTurn(payload, promise: promise) }.runOnQueue(.main)
     AsyncFunction("dataRuntimeStatus") { self.dataRuntime.status() }.runOnQueue(.main)
+    AsyncFunction("debugProbeSchema") { (promise: Promise) in
+      #if DEBUG
+      self.dataRuntime.debugProbeSchema(promise: promise)
+      #else
+      promise.resolve("{}")
+      #endif
+    }.runOnQueue(.main)
     AsyncFunction("debugHangDataRuntime") {
       #if DEBUG
       self.dataRuntime.debugHang()
@@ -34,6 +49,11 @@ public final class LodyKitModule: Module {
       #endif
     }.runOnQueue(.main)
     OnDestroy { DispatchQueue.main.async { self.dataRuntime.stop() } }
+
+    AsyncFunction("readLocalStartup") { try self.localStore.startup() }.runOnQueue(LocalStore.queue)
+    AsyncFunction("readLocalValue") { (key: String) in try self.localStore.read(key) }.runOnQueue(LocalStore.queue)
+    AsyncFunction("writeLocalValue") { (key: String, value: String) in try self.localStore.write(key, value) }.runOnQueue(LocalStore.queue)
+    AsyncFunction("clearLocalValues") { try self.localStore.clear() }.runOnQueue(LocalStore.queue)
 
     AsyncFunction("readAuthToken") { try AuthKeychain.read() }.runOnQueue(.main)
     AsyncFunction("saveAuthToken") { (token: String) in try AuthKeychain.save(token) }.runOnQueue(.main)
@@ -72,15 +92,29 @@ public final class LodyKitModule: Module {
       UISelectionFeedbackGenerator().selectionChanged()
     }.runOnQueue(.main)
 
+    Function("saveInboxView") { (index: Int) in
+      UserDefaults.standard.set(index == 1 ? 1 : 0, forKey: "inboxView")
+    }
+
     Constants {
-      ["runtimeInfo": [
+      var offlineProbe = false
+      #if DEBUG
+      offlineProbe = ProcessInfo.processInfo.arguments.contains("--lody-offline")
+      #endif
+      return ["initialInboxView": UserDefaults.standard.integer(forKey: "inboxView"), "runtimeInfo": [
         "moduleName": "LodyKit",
+        "offlineProbe": offlineProbe,
         "systemVersion": UIDevice.current.systemVersion,
       ]]
     }
 
     View(LodyGroupedList.self) {
-      Events("onRowPress", "onRefresh")
+      Prop("contentStyle") { (view: LodyGroupedList, value: Bool) in
+        view.setContentStyle(value)
+      }
+      Events("onRowPress", "onRefresh", "onSegmentChange")
+      Prop("segments") { (view: LodyGroupedList, labels: [String]) in view.setSegments(labels) }
+      Prop("selectedSegment") { (view: LodyGroupedList, index: Int) in view.setSelectedSegment(index) }
       Prop("sections") { (view: LodyGroupedList, sections: [LodyListSection]) in
         view.setSections(sections)
       }
@@ -98,6 +132,12 @@ public final class LodyKitModule: Module {
       }
     }
 
+
+    View(LodySearchBar.self) {
+      Events("onQueryChange", "onClose")
+      Prop("placeholder") { (view: LodySearchBar, text: String) in view.setPlaceholder(text) }
+      Prop("focused") { (view: LodySearchBar, focused: Bool) in view.setFocused(focused) }
+    }
 
     View(LodyCloseButton.self) {
       Events("onClose")

@@ -11,7 +11,7 @@ export default function Layout() {
     >
       <Stack.Screen
         name="index"
-        options={{ title: '设置', headerLargeTitle: true }}
+        options={{ title: '设置', headerLargeTitle: false }}
       />
     </Stack>
   );

@@ -24,6 +24,7 @@ export {
   addDataRuntimeListener,
   dataRuntimeStatus,
   debugHangDataRuntime,
+  debugProbeSchema,
   debugRestartDataRuntime,
   type DataRuntimeEvent,
 } from './runtime/LodyKit';
@@ -51,3 +52,15 @@ export {
   NativePressable,
   type NativePressableProps,
 } from './press/NativePressable';
+
+export { initialInboxView, saveInboxView } from './runtime/LodyKit';
+
+export {
+  readLocalValue,
+  writeLocalValue,
+  clearLocalValues,
+} from './runtime/LodyKit';
+
+export { readLocalStartup } from './runtime/LodyKit';
+
+export { NativeSearchBar } from './chrome/NativeSearchBar';

@@ -10,6 +10,7 @@ export function Composer({
   onSubmit,
   editable = true,
   sending = false,
+  submitDisabled = false,
   testID,
 }: {
   placeholder: string;
@@ -18,10 +19,12 @@ export function Composer({
   onSubmit: () => void;
   editable?: boolean;
   sending?: boolean;
+  submitDisabled?: boolean;
   testID?: string;
 }) {
   const colors = usePalette();
-  const canSend = editable && !sending && value.trim().length > 0;
+  const canSend =
+    editable && !submitDisabled && !sending && value.trim().length > 0;
   return (
     <View
       style={{
@@ -51,18 +54,21 @@ export function Composer({
           flex: 1,
           color: colors.label,
           fontSize: typeScale.body.size,
-          lineHeight: typeScale.body.lineHeight,
-          paddingTop: 8,
-          paddingBottom: 8,
-          minHeight: typeScale.body.lineHeight + 16,
+          // No lineHeight: RN maps it to minimumLineHeight on iOS multiline
+          // inputs, which pads above the text and stretches the caret.
+          // Match the send button's height so a single line centers with it;
+          // flex-end then grows the field upward as the text wraps.
+          paddingTop: 12,
+          paddingBottom: 12,
+          minHeight: 44,
           maxHeight: 140,
         }}
       />
       {sending ? (
         <View
           style={{
-            width: 36,
-            height: 36,
+            width: 44,
+            height: 44,
             alignItems: 'center',
             justifyContent: 'center',
           }}
@@ -77,7 +83,7 @@ export function Composer({
           disabled={!canSend}
           tint={colors.accent}
           onPress={onSubmit}
-          style={{ width: 36, height: 36 }}
+          style={{ width: 44, height: 44 }}
         />
       )}
     </View>

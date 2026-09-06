@@ -8,6 +8,33 @@ export const systemBackground = {
   dark: '#000000',
 } as const;
 
+export const systemGroupedBackground = {
+  light: '#F2F2F7',
+  dark: '#000000',
+} as const;
+
+export const opaqueCard = {
+  light: '#FFFFFF',
+  dark: '#1C1C1E',
+} as const;
+
+export const label = {
+  light: '#000000',
+  dark: '#FFFFFF',
+} as const;
+
+export const separator = {
+  light: '#C6C6C8',
+  dark: '#38383A',
+} as const;
+
+export const danger = {
+  light: '#FF3B30',
+  dark: '#FF453A',
+} as const;
+
+export const onAccent = '#FFFFFF';
+
 export const type = {
   title: { size: 20, lineHeight: 26 },
   body: { size: 17, lineHeight: 25 },

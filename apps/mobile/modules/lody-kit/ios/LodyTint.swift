@@ -1,7 +1,5 @@
 import UIKit
 
-/// Semantic state names resolve to system colors; the accent arrives as a hex
-/// value because it is the one color the app owns rather than UIKit.
 func lodyTint(_ value: String) -> UIColor? {
   switch value {
   case "": return nil
@@ -20,4 +18,14 @@ func lodyTint(_ value: String) -> UIColor? {
     blue: CGFloat(rgb & 0xFF) / 255,
     alpha: 1
   )
+}
+
+extension UIColor {
+  /// Glass sheets resolve grouped semantics to vibrant fills. Rows that still
+  /// need to read as cards use these opaque system card values instead.
+  static let lodyOpaqueCard = UIColor { traits in
+    traits.userInterfaceStyle == .dark
+      ? UIColor(red: 0x1C / 255, green: 0x1C / 255, blue: 0x1E / 255, alpha: 1)
+      : .white
+  }
 }

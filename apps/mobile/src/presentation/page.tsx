@@ -10,6 +10,9 @@ import {
 
 import { present, type PresentPage } from './presentationStore';
 
+/** Same contract as `present`, but the page opens inside the current sheet. */
+export type PushPage = PresentPage;
+
 export type PageSource = 'presentation' | 'route';
 export type PagePresentationStyle =
   'push' | 'formSheet' | 'fullScreen' | 'overFullScreen' | 'pageSheet';
@@ -23,6 +26,8 @@ export interface PagePresentationOptions {
   sheetGrabberVisible?: boolean;
   sheetInitialDetentIndex?: number | 'last';
   style: PagePresentationStyle;
+  /** Header title for this presentation; falls back to the page's own title. */
+  title?: string;
 }
 
 export type PageFinish<TResult> = [TResult] extends [void]
@@ -34,6 +39,7 @@ export interface PageRuntime<TParams = undefined, TResult = void> {
   finish: PageFinish<TResult>;
   params: TParams;
   present: PresentPage;
+  push: PushPage;
   source: PageSource;
 }
 
@@ -107,7 +113,15 @@ export function definePage<TParams = undefined, TResult = void>(
       [leave],
     ) as PageFinish<TResult>;
     const runtime = useMemo<PageRuntime<TParams, TResult>>(
-      () => ({ cancel: leave, finish, params, present, source: 'route' }),
+      () => ({
+        cancel: leave,
+        finish,
+        params,
+        present,
+        // A route has no sheet of its own to push into.
+        push: present,
+        source: 'route',
+      }),
       [finish, leave, params],
     );
 

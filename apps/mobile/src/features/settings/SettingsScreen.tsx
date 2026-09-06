@@ -2,6 +2,7 @@ import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
 import { NativeGroupedList, type NativeListSection } from '@lody-ios/kit';
 import { useAuth } from '@/features/auth/AuthProvider';
+import { useCatalog } from '@/cloud/CatalogProvider';
 import { useConnection } from '@/cloud/connection';
 import { usePalette } from '@/theme/palette';
 import { relativeTime } from '@/ui/time';
@@ -18,6 +19,7 @@ export default function SettingsScreen() {
   const router = useRouter();
   const colors = usePalette();
   const connection = useConnection();
+  const { refresh } = useCatalog();
   const shape = connectionRow[connection.state];
   const synced = connection.syncedAt
     ? relativeTime(new Date(connection.syncedAt).toISOString())
@@ -33,6 +35,9 @@ export default function SettingsScreen() {
           title: auth.account?.user.name ?? '欢迎使用 Lody',
           subtitle: auth.account?.user.email ?? '登录后连接你的工作区',
           image: 'person.crop.circle',
+          action: true,
+          disclosure: true,
+          navigates: true,
         },
       ],
     },
@@ -43,10 +48,16 @@ export default function SettingsScreen() {
         {
           id: 'connection',
           title: `${connection.machines} 台电脑`,
-          subtitle: [shape.label, synced && `同步于 ${synced}`]
+          subtitle: [
+            shape.label,
+            connection.state === 'offline'
+              ? '点按重新同步'
+              : synced && `同步于 ${synced}`,
+          ]
             .filter(Boolean)
             .join(' · '),
           image: shape.symbol,
+          action: connection.state === 'offline',
           imageTint:
             connection.state === 'live'
               ? colors.accent
@@ -71,15 +82,6 @@ export default function SettingsScreen() {
       ],
     },
   ];
-
-  if (auth.account && !auth.busy)
-    sections[0].rows.push({
-      id: 'auth-logout',
-      title: '退出登录',
-      image: 'rectangle.portrait.and.arrow.right',
-      action: true,
-      destructive: true,
-    });
 
   if (__DEV__)
     sections.push({
@@ -106,7 +108,9 @@ export default function SettingsScreen() {
       placeholder=""
       onRowPress={({ nativeEvent }) => {
         if (nativeEvent.id === 'debug-open') router.push('/debug');
-        if (nativeEvent.id === 'auth-logout') void auth.logout();
+        if (nativeEvent.id === 'account')
+          router.push(auth.account ? '/settings/account' : '/');
+        if (nativeEvent.id === 'connection') refresh();
       }}
     />
   );

@@ -1,7 +1,6 @@
 import {
   type NativeStackNavigationOptions,
   router,
-  Stack,
   useLocalSearchParams,
   useNavigation,
 } from 'expo-router';
@@ -24,6 +23,7 @@ import {
   type PageRuntime,
   PageRuntimeProvider,
 } from './page';
+import { SheetStack } from './SheetStack';
 import {
   cancelPresentation,
   completePresentation,
@@ -128,15 +128,13 @@ export function nativePresentationOptions(
           : backgroundColor,
     },
     gestureEnabled: dismissible,
-    headerBackVisible: style === 'push' && dismissible,
-    headerBackButtonDisplayMode: 'minimal',
+    // Sheets own their inner stack; pushed pages keep the router
+    // header and its native back gesture.
+    headerShown: style === 'push' && headerShown,
+    headerLargeTitle: false,
+    headerTransparent: transparentHeader,
     headerShadowVisible: false,
     scrollEdgeEffects: softScrollEdgeEffects,
-    headerShown,
-    headerStyle: transparentHeader
-      ? { backgroundColor: 'transparent' }
-      : undefined,
-    headerTransparent: transparentHeader,
     presentation: nativePresentationStyle(style),
     sheetAllowedDetents: formSheet
       ? session.presentation.sheetAllowedDetents
@@ -147,7 +145,7 @@ export function nativePresentationOptions(
     sheetInitialDetentIndex: formSheet
       ? session.presentation.sheetInitialDetentIndex
       : undefined,
-    title: session.page.title,
+    title: session.presentation.title ?? session.page.title,
   };
 }
 
@@ -203,6 +201,7 @@ function usePresentedPageSession(expectedPage?: PageDefinitionBase) {
             finish,
             params: session.params,
             present,
+            push: present,
             source: 'presentation',
           }
         : null,
@@ -227,26 +226,11 @@ export function PresentedPageProvider({
 export function PresentedPageRoute() {
   const { runtime, session } = usePresentedPageSession();
   if (!runtime || !session) return null;
-  const { Component } = session.page;
-  const showCloseItem =
-    session.presentation.style !== 'push' &&
-    session.presentation.headerShown &&
-    session.presentation.dismissible;
-
-  return (
-    <>
-      {showCloseItem ? (
-        <Stack.Toolbar placement="right">
-          <Stack.Toolbar.Button
-            accessibilityLabel={`关闭${session.page.title}`}
-            icon="xmark"
-            onPress={runtime.cancel}
-          />
-        </Stack.Toolbar>
-      ) : null}
+  if (session.presentation.style === 'push')
+    return (
       <PageRuntimeProvider value={runtime}>
-        <Component />
+        <session.page.Component />
       </PageRuntimeProvider>
-    </>
-  );
+    );
+  return <SheetStack session={session} runtime={runtime} />;
 }

@@ -1,6 +1,7 @@
 import { NativeModule, requireNativeModule } from 'expo';
 
 export interface RuntimeInfo {
+  offlineProbe?: boolean;
   moduleName: string;
   systemVersion: string;
 }
@@ -21,7 +22,17 @@ type Events = {
   onDataRuntime: (event: DataRuntimeEvent) => void;
 };
 declare class LodyKitNativeModule extends NativeModule<Events> {
+  readLocalStartup(): Promise<{
+    account?: string;
+    workspace?: string;
+    catalog?: string;
+  }>;
+  readLocalValue(key: string): Promise<string | null>;
+  writeLocalValue(key: string, value: string): Promise<void>;
+  clearLocalValues(): Promise<void>;
   readonly runtimeInfo: RuntimeInfo;
+  readonly initialInboxView: number;
+  saveInboxView(index: number): void;
   watchSession(id: string): Promise<void>;
   unwatchSession(id: string): Promise<void>;
   sessionCreationOptions(payload: string): Promise<string>;
@@ -31,6 +42,7 @@ declare class LodyKitNativeModule extends NativeModule<Events> {
   unwatchCatalog(owner: string): Promise<void>;
   dataRuntimeStatus(): Promise<DataRuntimeEvent>;
   debugHangDataRuntime(): Promise<void>;
+  debugProbeSchema(): Promise<string>;
   debugRestartDataRuntime(): Promise<void>;
   selectionFeedback(): Promise<void>;
   readAuthToken(): Promise<string | null>;
@@ -72,6 +84,7 @@ export const addDataRuntimeListener = (
 ) => native.addListener('onDataRuntime', listener);
 export const dataRuntimeStatus = () => native.dataRuntimeStatus();
 export const debugHangDataRuntime = () => native.debugHangDataRuntime();
+export const debugProbeSchema = () => native.debugProbeSchema();
 export const debugRestartDataRuntime = () => native.debugRestartDataRuntime();
 
 export const watchSession = (id: string) => native.watchSession(id);
@@ -82,3 +95,13 @@ export const sendSessionTurn = (payload: string) =>
 export const sessionCreationOptions = (payload: string) =>
   native.sessionCreationOptions(payload);
 export const createSession = (payload: string) => native.createSession(payload);
+
+export const initialInboxView = native.initialInboxView === 1 ? 1 : 0;
+export const saveInboxView = (index: number) => native.saveInboxView(index);
+
+export const readLocalValue = (key: string) => native.readLocalValue(key);
+export const writeLocalValue = (key: string, value: string) =>
+  native.writeLocalValue(key, value);
+export const clearLocalValues = () => native.clearLocalValues();
+
+export const readLocalStartup = () => native.readLocalStartup();

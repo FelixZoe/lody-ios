@@ -6,6 +6,7 @@ import {
   dataRuntimeStatus,
   addDataRuntimeListener,
   debugHangDataRuntime,
+  debugProbeSchema,
   debugRestartDataRuntime,
 } from '@lody-ios/kit';
 import { environmentPage } from '@/features/environment/EnvironmentScreen';
@@ -77,6 +78,19 @@ export default function DebugScreen() {
       >
         {runtime}
       </Text>
+      <Button
+        testID="runtime-probe"
+        onPress={() =>
+          void debugProbeSchema()
+            .then((report) => {
+              console.log('PROBE_BEGIN', report, 'PROBE_END');
+              setRuntime(report.slice(0, 400));
+            })
+            .catch((error) => setRuntime(String(error)))
+        }
+      >
+        探测机器数据结构（只报字段名）
+      </Button>
       <Button testID="runtime-hang" onPress={() => void debugHangDataRuntime()}>
         卡死 WebView JS
       </Button>

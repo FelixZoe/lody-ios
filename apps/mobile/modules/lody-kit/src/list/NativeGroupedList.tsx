@@ -21,6 +21,8 @@ export type NativeListRow = {
 export type NativeListSection = {
   id: string;
   header?: string;
+  headerValue?: string;
+  headerActionId?: string;
   footer?: string;
   rows: NativeListRow[];
 };
@@ -28,10 +30,15 @@ export type NativeListSection = {
 export const NativeGroupedList: ComponentType<
   ViewProps & {
     sections: NativeListSection[];
+    segments?: string[];
+    selectedSegment?: number;
+    onSegmentChange?: (event: NativeSyntheticEvent<{ index: number }>) => void;
     /** Default row tint; `#RRGGBB`. Rows may override with `imageTint`. */
     accent?: string;
     /** Drop the list's own background so a sheet's material shows through. */
     transparent?: boolean;
+    /** Unboxed content sections with tappable project headings. */
+    contentStyle?: boolean;
     placeholder?: string;
     refreshing?: boolean;
     onRefresh?: () => void;

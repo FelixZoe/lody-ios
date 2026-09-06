@@ -6,8 +6,11 @@ import {
   useState,
   type PropsWithChildren,
 } from 'react';
+import { showToast } from '@/ui/toast';
 import {
+  runtimeInfo,
   readAuthToken,
+  readLocalStartup,
   saveAuthToken,
   clearAuthToken,
   openAuthBrowser,
@@ -24,10 +27,21 @@ import {
   type Workspace,
 } from '@/cloud/auth';
 
+import {
+  writeLocal,
+  parseLocal,
+  clearLocal,
+  type SavedAccount,
+  type SavedCatalog,
+} from '@/cloud/local';
+
 type Account = { token: string; user: User; workspaces: Workspace[] };
 type AuthState = {
   account: Account | null;
   busy: boolean;
+  localReady: boolean;
+  initialWorkspace: string;
+  initialCatalog: SavedCatalog | null;
   code: DeviceCode | null;
   error: string | null;
 };
@@ -43,6 +57,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [state, setState] = useState<AuthState>({
     account: null,
     busy: true,
+    localReady: false,
+    initialWorkspace: '',
+    initialCatalog: null,
     code: null,
     error: null,
   });
@@ -61,23 +78,57 @@ export function AuthProvider({ children }: PropsWithChildren) {
     const signal = begin();
     update(signal, { busy: true, error: null });
     try {
-      const token = await readAuthToken();
+      const localStarted = performance.now();
+      const [token, boot] = await Promise.all([
+        readAuthToken(),
+        readLocalStartup().catch(
+          () =>
+            ({}) as { account?: string; workspace?: string; catalog?: string },
+        ),
+      ]);
+      if (signal.aborted) return;
+      const saved = parseLocal<SavedAccount>(boot.account);
+      if (token && saved?.user?.id && Array.isArray(saved.workspaces)) {
+        const initialCatalog = parseLocal<SavedCatalog>(boot.catalog);
+        if (__DEV__)
+          console.info(
+            `LodyLocal hydrate_ms=${(performance.now() - localStarted).toFixed(2)}`,
+          );
+        update(signal, {
+          account: { token, ...saved },
+          localReady: true,
+          initialWorkspace: boot.workspace ?? '',
+          initialCatalog,
+        });
+      } else update(signal, { localReady: true });
       if (!token) {
         update(signal, { account: null });
         return;
       }
+      // Match the native grant failure probe without changing product endpoints.
+      if (__DEV__ && runtimeInfo.offlineProbe) throw new Error('网络不可用');
       const account = await getAccount(token, signal);
+      if (signal.aborted) return;
+      if (saved && saved.user.id !== account.user.id) {
+        await clearLocal();
+        update(signal, { initialCatalog: null, initialWorkspace: '' });
+      }
+      await writeLocal('account', account).catch(() =>
+        showToast('本地账号保存失败，下次启动可能需要联网恢复'),
+      );
       update(signal, { account: { token, ...account } });
     } catch (error) {
       if (error instanceof AuthError && !signal.aborted) {
-        await clearAuthToken();
-        update(signal, { account: null });
+        update(signal, { account: null, initialCatalog: null });
+        await Promise.all([clearLocal(), clearAuthToken()]).catch(() =>
+          showToast('无法完全清除本地登录信息，请重试'),
+        );
       }
       update(signal, {
         error: error instanceof Error ? error.message : '登录恢复失败',
       });
     } finally {
-      update(signal, { busy: false });
+      update(signal, { busy: false, localReady: true });
     }
   }
   async function login() {
@@ -91,7 +142,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
       const token = await pollDeviceToken(code, signal);
       const account = await getAccount(token, signal);
       if (signal.aborted) throw new Error('已取消');
+      await clearLocal();
       await saveAuthToken(token);
+      await writeLocal('account', account).catch(() =>
+        showToast('本地账号保存失败，下次启动可能需要联网恢复'),
+      );
       if (signal.aborted) throw new Error('已取消');
       update(signal, { account: { token, ...account }, code: null });
     } catch (error) {
@@ -102,7 +157,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     } finally {
       if (!signal.aborted) {
         await closeAuthBrowser();
-        update(signal, { busy: false });
+        update(signal, { busy: false, localReady: true });
       }
     }
   }
@@ -116,15 +171,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
       signal = begin();
     update(signal, { busy: true, error: null });
     try {
-      await clearAuthToken();
-      update(signal, { account: null, code: null });
+      update(signal, { account: null, code: null, initialCatalog: null });
+      await Promise.all([clearLocal(), clearAuthToken()]);
       if (token) await authRequest('/sign-out', { token, body: {}, signal });
     } catch {
       update(signal, {
         error: '退出未完全完成，请重试；本机凭据是否清除以当前登录状态为准',
       });
     } finally {
-      update(signal, { busy: false });
+      update(signal, { busy: false, localReady: true });
     }
   }
   async function reopen() {

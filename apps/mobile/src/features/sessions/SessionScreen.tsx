@@ -1,3 +1,5 @@
+import { Stack } from 'expo-router';
+import { useCatalog } from '@/cloud/CatalogProvider';
 import { useEffect, useRef, useState } from 'react';
 import {
   FlatList,
@@ -7,6 +9,7 @@ import {
   TextInput,
   View,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { usePalette } from '@/theme/palette';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -34,6 +37,17 @@ function SessionScreen() {
   const { account } = useAuth(),
     colors = usePalette();
   const insets = useSafeAreaInsets();
+  const { catalog } = useCatalog();
+  const project = catalog.projects.find((p) => p.id === session.projectId);
+  const currentSession =
+    catalog.sessions.find((s) => s.id === session.id) ?? session;
+  const showDetails = () =>
+    Alert.alert(
+      currentSession.title,
+      [project?.name, project?.rootPath, `电脑：${currentSession.machineId}`]
+        .filter(Boolean)
+        .join('\n'),
+    );
   const [snapshot, setSnapshot] = useState<Snapshot>({
     status: 'syncing',
     messages: [],
@@ -43,6 +57,8 @@ function SessionScreen() {
     [receipt, setReceipt] = useState('');
   const [showJump, setShowJump] = useState(false);
   const [uncertain, setUncertain] = useState(false);
+  const viewportHeight = useRef(0),
+    contentHeight = useRef(0);
   const list = useRef<FlatList<Message>>(null),
     following = useRef(true),
     busy = useRef(false),
@@ -71,6 +87,9 @@ function SessionScreen() {
     };
   }, [session.id]);
   useEffect(() => {
+    if (!following.current && snapshot.messages.length) setShowJump(true);
+  }, [snapshot.messages]);
+  useEffect(() => {
     if (autoSent.current || !initialDraft || snapshot.status !== 'live') return;
     autoSent.current = true;
     void submit();
@@ -83,6 +102,7 @@ function SessionScreen() {
       !account ||
       !draft.trim() ||
       snapshot.status !== 'live' ||
+      currentSession.archived ||
       uncertain
     )
       return;
@@ -121,7 +141,7 @@ function SessionScreen() {
   }
   const canSend =
     snapshot.status === 'live' &&
-    !session.archived &&
+    !currentSession.archived &&
     !sending &&
     !uncertain &&
     !!draft.trim();
@@ -144,6 +164,26 @@ function SessionScreen() {
       behavior="padding"
       style={{ flex: 1, backgroundColor: colors.background }}
     >
+      <Stack.Screen
+        options={{
+          title: currentSession.title,
+          headerTitle: () => (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="查看会话详情"
+              onPress={showDetails}
+              style={{ minHeight: 44, justifyContent: 'center', maxWidth: 240 }}
+            >
+              <Text
+                numberOfLines={1}
+                style={{ color: colors.label, fontSize: 17, fontWeight: '600' }}
+              >
+                {currentSession.title}
+              </Text>
+            </Pressable>
+          ),
+        }}
+      />
       <ScrollViewMarker
         style={{ flex: 1 }}
         scrollEdgeEffects={softScrollEdgeEffects}
@@ -172,28 +212,31 @@ function SessionScreen() {
                   e.layoutMeasurement.height <
                 100;
               following.current = near;
-              setShowJump(!near);
+              if (near) setShowJump(false);
             }
           }}
           scrollEventThrottle={100}
-          onLayout={() => {
-            if (following.current)
+          onLayout={({ nativeEvent }) => {
+            viewportHeight.current = nativeEvent.layout.height;
+            if (
+              following.current &&
+              contentHeight.current > viewportHeight.current
+            )
               requestAnimationFrame(() =>
                 list.current?.scrollToEnd({ animated: false }),
               );
           }}
-          onContentSizeChange={() => {
-            if (following.current)
+          onContentSizeChange={(_, height) => {
+            contentHeight.current = height;
+            if (
+              following.current &&
+              viewportHeight.current > 0 &&
+              height > viewportHeight.current
+            )
               requestAnimationFrame(() =>
                 list.current?.scrollToEnd({ animated: false }),
               );
           }}
-          ListHeaderComponent={
-            <View style={{ gap: 8, paddingVertical: 12, marginBottom: 12 }}>
-              <AppText variant="eyebrow">项目对话</AppText>
-              <AppText variant="title">{session.title}</AppText>
-            </View>
-          }
           ListEmptyComponent={
             <View
               style={{ paddingVertical: 60, alignItems: 'center', gap: 14 }}
@@ -276,20 +319,27 @@ function SessionScreen() {
         ) : null}
         <Composer
           testID="session-input"
-          placeholder={session.archived ? '此会话已归档' : '给 Lody 发消息…'}
+          placeholder={
+            currentSession.archived ? '此会话已归档' : '给 Lody 发消息…'
+          }
           value={draft}
           onChangeText={setDraft}
           onSubmit={() => void submit()}
-          editable={canSend || (!sending && !uncertain && !session.archived)}
+          editable={!sending && !uncertain && !currentSession.archived}
+          submitDisabled={!canSend}
           sending={sending}
         />
-        <AppText
-          accessibilityLiveRegion="polite"
-          variant="meta"
-          style={{ textAlign: 'center' }}
-        >
-          {sending ? '正在发送…' : connection} · 回复由连接的电脑生成
-        </AppText>
+        {!disconnected &&
+        !uncertain &&
+        (sending || snapshot.status !== 'live') ? (
+          <AppText
+            accessibilityLiveRegion="polite"
+            variant="meta"
+            style={{ textAlign: 'center' }}
+          >
+            {sending ? '正在发送…' : connection}
+          </AppText>
+        ) : null}
       </View>
     </KeyboardAvoidingView>
   );

@@ -245,14 +245,45 @@ function watch(mode: string) {
 Object.assign(globalThis, {
   dataRuntime: {
     ping: () => true,
-    creationOptions(args: { workspaceId: string; projectId: string }) {
-      if (args.workspaceId !== workspace || !metaReplica || unhealthy.size)
-        throw new Error('metadata_not_ready');
-      return creationOptions(
-        args.projectId,
-        metaReplica.flock,
-        machineReplicas,
-      );
+    /**
+     * Development probe: reports the shape of the machine replicas so the client
+     * can find out whether model choices exist in the data at all. Names only —
+     * values may carry launch environment and secrets and must never leave the
+     * WebView.
+     */
+    probeSchema() {
+      // Development probe. `acpCapability` is a published capability catalog —
+      // model and mode names are exactly what the picker must show, so its
+      // values are safe to report. `agentConfig.env` carries launch secrets and
+      // never leaves the WebView; only its field names are reported.
+      const names = (value: unknown): string[] =>
+        value && typeof value === 'object' && !Array.isArray(value)
+          ? Object.keys(value as Record<string, unknown>).sort()
+          : [];
+      const report: Record<string, unknown> = {};
+      for (const [machineId, flock] of machineReplicas) {
+        const capabilities: unknown[] = [];
+        const otherKeys = new Set<string>();
+        for (const row of flock.scan()) {
+          const kind = String(row.key[0]);
+          if (kind !== 'acpCapability') {
+            otherKeys.add(kind);
+            continue;
+          }
+          const value = (row.value ?? {}) as Record<string, unknown>;
+          capabilities.push({
+            key: row.key.map(String),
+            cliType: value.cliType,
+            agentType: value.agentType,
+            models: value.models,
+            modes: value.modes,
+            modelReasoningEfforts: value.modelReasoningEfforts,
+            configOptionFields: names(value.configOptions),
+          });
+        }
+        report[machineId] = { otherKeys: [...otherKeys].sort(), capabilities };
+      }
+      return report;
     },
     async createSession(args: CreateSessionArgs) {
       if (
