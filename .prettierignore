@@ -5,3 +5,5 @@ node_modules/
 dist/
 apps/mobile/modules/lody-kit/ios/Resources/
 apps/mobile/expo-env.d.ts
+
+.acceptances/

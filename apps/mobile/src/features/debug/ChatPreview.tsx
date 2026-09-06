@@ -1,0 +1,201 @@
+import { Stack } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { Alert } from 'react-native';
+import { NativeChat } from '@lody-ios/kit';
+import { definePage } from '@/presentation';
+import { useProcessSheet } from '@/features/sessions/detail/processPage';
+
+const answer = `## 原生聊天布局\n\n列表使用 **UICollectionView**，正文直接由 UIKit 渲染。\n\n- 输入区始终可见，跟随键盘移动\n- 执行过程在 Sheet 中平铺\n- 完成后保持回答和过程入口\n\n### 代码示例\n\n\`\`\`swift\nlet layout = UICollectionViewFlowLayout()\nlet list = UICollectionView(\n  frame: .zero,\n  collectionViewLayout: layout\n)\n\`\`\`\n\n这是一条用于检查换行、**粗体**和 \`inline code\` 的较长段落。切换浅色和深色外观，正文和输入框都应清晰可读。`;
+const history = Array.from({ length: 80 }, (_, index) => ({
+  id: `history-${index}`,
+  role: index % 2 ? 'assistant' : 'user',
+  status: 'completed',
+  finished: true,
+  items: [
+    {
+      itemId: 'text',
+      type: 'text',
+      text:
+        index % 2
+          ? `第 ${index} 条历史回答。\n\n${answer}`
+          : '请继续检查聊天页面的原生布局。',
+    },
+  ],
+}));
+
+const totalLength = answer.length + 240;
+
+function ChatPreview() {
+  const [length, setLength] = useState(totalLength);
+  const [step, setStep] = useState(48);
+  const [mode, setMode] = useState<'normal' | 'attention'>('normal');
+  const [clearDraftToken, setClearDraftToken] = useState(0);
+  const [sent, setSent] = useState<{ text: string; id: number } | null>(null);
+  useEffect(() => {
+    if (length >= totalLength) return;
+    const timer = setInterval(
+      () => setLength((old) => Math.min(totalLength, old + step)),
+      700,
+    );
+    return () => clearInterval(timer);
+  }, [length < totalLength, step]);
+  const entriesJSON = JSON.stringify([
+    ...history,
+    ...(sent
+      ? [
+          {
+            id: `preview-user-${sent.id}`,
+            role: 'user',
+            status: 'completed',
+            finished: true,
+            items: [{ itemId: 'text', type: 'text', text: sent.text }],
+          },
+        ]
+      : []),
+    {
+      id: sent ? `preview-${sent.id}` : 'preview',
+      role: 'assistant',
+      status: length < totalLength ? 'running' : 'completed',
+      finished: length >= totalLength,
+      items: [
+        {
+          itemId: 'intro',
+          type: 'text',
+          text: '先检查消息列表和导航栏的连接。'.slice(0, Math.max(1, length)),
+        },
+        ...(length >= 24
+          ? [
+              {
+                itemId: 'thought',
+                type: 'thought',
+                text: '先核对原生标题与滚动列表所属的控制器。'.slice(
+                  0,
+                  length - 23,
+                ),
+              },
+            ]
+          : []),
+        ...(length >= 48
+          ? [
+              {
+                itemId: 'read',
+                type: 'tool_call',
+                kind: 'read',
+                title: '读取 SessionScreen.tsx',
+                status: length < 96 ? 'in_progress' : 'completed',
+                hasDetail: true,
+              },
+            ]
+          : []),
+        ...(length >= 96
+          ? [
+              {
+                itemId: 'middle',
+                type: 'text',
+                text: '标题已经接入原生，接下来检查正文布局。',
+              },
+            ]
+          : []),
+        ...(length >= 144
+          ? [
+              {
+                itemId: 'thought-two',
+                type: 'thought',
+                text: '接下来核对段落高度，确认完成后只保留结论。'.slice(
+                  0,
+                  length - 143,
+                ),
+              },
+            ]
+          : []),
+        ...(length >= 192
+          ? [
+              {
+                itemId: 'edit',
+                type: 'tool_call',
+                kind: 'edit',
+                title: '修改 ChatView.swift',
+                status:
+                  mode === 'attention'
+                    ? 'failed'
+                    : length < 240
+                      ? 'in_progress'
+                      : 'completed',
+                hasDetail: true,
+              },
+            ]
+          : []),
+        ...(length >= 240
+          ? [
+              {
+                itemId: 'answer',
+                type: 'text',
+                text: answer.slice(0, length - 240),
+              },
+            ]
+          : []),
+      ],
+    },
+  ]);
+  const openProcess = useProcessSheet(entriesJSON, () => setMode('attention'));
+  return (
+    <>
+      <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Button
+          accessibilityLabel="Fast Replay"
+          icon="forward.end"
+          onPress={() => {
+            setStep(240);
+            setMode('normal');
+            setLength(0);
+          }}
+        />
+        <Stack.Toolbar.Button
+          accessibilityLabel="Retry"
+          icon="arrow.trianglehead.clockwise.rotate.90"
+          onPress={() => {
+            setStep(48);
+            setMode('normal');
+            setLength(0);
+          }}
+        ></Stack.Toolbar.Button>
+      </Stack.Toolbar>
+      <NativeChat
+        navigationTitle="原生聊天预览"
+        onTitlePress={() => Alert.alert('会话详情', '原生 titleView 点击正常')}
+        style={{ flex: 1 }}
+        entriesJSON={entriesJSON}
+        composerJSON={JSON.stringify({
+          editable: true,
+          canSend: true,
+          sending: false,
+          notice: '',
+          reconnect: false,
+          placeholder: '输入文字，检查键盘布局…',
+        })}
+        clearDraftToken={clearDraftToken}
+        emptyText=""
+        onSend={({ nativeEvent }) => {
+          setStep(48);
+          setSent((old) => ({
+            text: nativeEvent.text,
+            id: (old?.id ?? 0) + 1,
+          }));
+          setClearDraftToken((old) => old + 1);
+          setMode('normal');
+          setLength(0);
+        }}
+        onActivityPress={({ nativeEvent }) =>
+          openProcess(nativeEvent.entryId, nativeEvent.processStartId)
+        }
+        onReconnect={() => {}}
+      />
+    </>
+  );
+}
+export const chatPreviewPage = definePage({
+  id: 'chat-preview',
+  title: '原生聊天预览',
+  Component: ChatPreview,
+  presentation: { style: 'push', headerVariant: 'transparent' },
+});

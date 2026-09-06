@@ -32,6 +32,8 @@ export const NativeGroupedList: ComponentType<
   ViewProps & {
     sections: NativeListSection[];
     segments?: string[];
+    /** Ride the search bar's scope bar; only for screens that also want search. */
+    segmentsUseSearchScope?: boolean;
     selectedSegment?: number;
     onSegmentChange?: (event: NativeSyntheticEvent<{ index: number }>) => void;
     /** Default row tint; `#RRGGBB`. Rows may override with `imageTint`. */

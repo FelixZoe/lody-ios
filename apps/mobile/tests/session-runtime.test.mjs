@@ -120,11 +120,39 @@ test('send persists user before dispatch; duplicate incremental imports preserve
     },
   );
   await initial;
+  const attachments = [
+    {
+      type: 'image',
+      imageId: 'img1',
+      mimeType: 'image/png',
+      sizeBytes: 12,
+      fileName: '照片.png',
+    },
+    {
+      type: 'file',
+      fileId: 'file1',
+      fileName: 'note.txt',
+      mimeType: 'text/plain',
+      sizeBytes: 3,
+      sha256: 'abc',
+      textPreview: true,
+      transport: 'r2',
+      uploadedAt: 1,
+    },
+  ];
+  const invalid = await runtime.sendTurn({
+    sessionId: 's1',
+    text: '',
+    attachmentBlocks: [{ type: 'image', uri: 'file:///private/test' }],
+  });
+  assert.equal(invalid.state, 'not_sent');
+  assert.equal(appends, 0);
   const result = await runtime.sendTurn({
     sessionId: 's1',
     machineId: 'm1',
     userId: 'u1',
     text: 'POC hello',
+    attachmentBlocks: attachments,
     cliType: 'builtin',
     agentType: 'codex',
   });
@@ -132,6 +160,18 @@ test('send persists user before dispatch; duplicate incremental imports preserve
   assert.equal(appends, 1);
   const user = server.toJSON().history[0];
   assert.equal(user.items[0].text, 'POC hello');
+  assert.deepEqual(user.items.slice(1), attachments);
+  assert.deepEqual(
+    rpc.params.inputConfig.inputBlocks,
+    user.inputConfig.inputBlocks,
+  );
+  assert.deepEqual(user.inputConfig.inputBlocks.slice(1), attachments);
+  const projectedImage = runtime.projectSession(server, 'live').entries[0]
+    .items[1];
+  assert.equal(projectedImage.type, 'image');
+  assert.equal(projectedImage.image.id, 'img1');
+  assert.equal(projectedImage.image.fileName, '照片.png');
+  assert.equal(projectedImage.text, undefined);
   assert.deepEqual(user.inputConfig.mcpServerIds, []);
   const version = server.version();
   const entry = server.getList('history').pushContainer(new LoroMap());
@@ -202,11 +242,13 @@ test('send persists user before dispatch; duplicate incremental imports preserve
     sessionId: 's1',
     machineId: 'm1',
     userId: 'u1',
-    text: 'lost ACK',
+    text: '',
+    attachmentBlocks: attachments,
     cliType: 'builtin',
     agentType: 'codex',
   });
   assert.equal(uncertain.state, 'unknown');
+  assert.deepEqual(server.toJSON().history.at(-1).items, attachments);
   assert.equal(
     server.toJSON().history.filter((e) => e.id === uncertain.id).length,
     1,

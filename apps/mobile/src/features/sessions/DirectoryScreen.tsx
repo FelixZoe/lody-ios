@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert } from 'react-native';
+import { Alert, PlatformColor } from 'react-native';
 import {
   NativeGroupedList,
   localProjects,
@@ -130,6 +130,8 @@ function DirectoryScreen() {
         ? [
             {
               type: 'button' as const,
+              variant: 'prominent' as const,
+              tintColor: PlatformColor('systemBlue'),
               icon: { type: 'sfSymbol' as const, name: 'checkmark' },
               accessibilityLabel: saving ? '正在使用文件夹' : '使用此文件夹',
               disabled: !directory || loading || saving,
@@ -146,7 +148,13 @@ function DirectoryScreen() {
         {
           id: 'location',
           header: machine.name,
-          footer: error || (saving ? '正在登记文件夹…' : undefined),
+          footer:
+            error ||
+            (saving
+              ? '正在登记文件夹…'
+              : loading
+                ? '正在读取文件夹…'
+                : undefined),
           rows: [
             {
               id: 'path',

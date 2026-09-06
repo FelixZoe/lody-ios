@@ -8,6 +8,7 @@ final class DataRuntime: NSObject, WKScriptMessageHandler, WKNavigationDelegate 
   private var sessionId: String?
   private var commands: [UUID: Promise] = [:]
   private var timer: Timer?
+  private var attachmentTask: Task<Void, Never>?
   private var grantTask: URLSessionDataTask?
   private var health = RuntimeHealth()
   private var pingPending = false
@@ -74,6 +75,7 @@ final class DataRuntime: NSObject, WKScriptMessageHandler, WKNavigationDelegate 
     } catch { disposeView(); publish("failed", reason: "missing_resource") }
   }
   private func disposeView() {
+    attachmentTask?.cancel(); attachmentTask = nil
     for promise in commands.values { fail(promise, "runtime_replaced", "通信层已重建，发送结果请以同步记录为准") }; commands.removeAll()
     timer?.invalidate(); timer = nil
     grantTask?.cancel(); grantTask = nil
@@ -134,17 +136,47 @@ final class DataRuntime: NSObject, WKScriptMessageHandler, WKNavigationDelegate 
     }
   }
   func openSession(_ id: String) {
+    if sessionId != id { attachmentTask?.cancel(); attachmentTask = nil }
     sessionId = id
     guard health.ready, let view = webView else { return }
     view.callAsyncJavaScript("return await globalThis.dataRuntime.session(id)", arguments: ["id": id], in: nil, in: .page, completionHandler: nil)
   }
   func closeSession(_ id: String) {
     guard sessionId == id else { return }
+    attachmentTask?.cancel(); attachmentTask = nil
     sessionId = nil
     webView?.evaluateJavaScript("globalThis.dataRuntime.closeSession()", completionHandler: nil)
   }
   func sendTurn(_ payload: String, promise: Promise) {
-    command("sendTurn", payload: payload, promise: promise)
+    guard let data = payload.data(using: .utf8), data.count <= 128 * 1024,
+          var args = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let attachments = args.removeValue(forKey: "attachments") as? [[String: Any]], !attachments.isEmpty else {
+      command("sendTurn", payload: payload, promise: promise); return
+    }
+    guard health.ready, let workspace, let sessionId, args["sessionId"] as? String == sessionId, attachmentTask == nil else {
+      promise.resolve(#"{"state":"not_sent","reason":"会话尚未就绪，请稍后重试"}"#); return
+    }
+    let generation = self.generation
+    attachmentTask = Task.detached { [weak self] in
+      do {
+        args["attachmentBlocks"] = try await SessionAttachments.upload(attachments, workspace: workspace, session: sessionId)
+        try Task.checkCancellation()
+        let prepared = String(data: try JSONSerialization.data(withJSONObject: args), encoding: .utf8)!
+        await MainActor.run { [weak self] in
+          guard let self, self.generation == generation, self.sessionId == sessionId, !Task.isCancelled else {
+            promise.resolve(#"{"state":"not_sent","reason":"连接已切换，消息尚未发送"}"#); return
+          }
+          self.attachmentTask = nil
+          self.command("sendTurn", payload: prepared, promise: promise)
+        }
+      } catch {
+        let result = (try? JSONSerialization.data(withJSONObject: ["state": "not_sent", "reason": error.localizedDescription])) ?? Data()
+        await MainActor.run { [weak self] in
+          if let self, self.generation == generation, self.sessionId == sessionId, !Task.isCancelled { self.attachmentTask = nil }
+          promise.resolve(String(data: result, encoding: .utf8)!)
+        }
+      }
+    }
   }
   /// The command guard matches the payload's workspace, which a diagnostic has
   /// no way to know. Inject the runtime's own.

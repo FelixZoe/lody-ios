@@ -1,4 +1,5 @@
 import { useRouter } from 'expo-router';
+import { Linking } from 'react-native';
 import Constants from 'expo-constants';
 import { NativeGroupedList, type NativeListSection } from '@lody-ios/kit';
 import { useAuth } from '@/features/auth/AuthProvider';
@@ -81,6 +82,20 @@ export default function SettingsScreen() {
         },
       ],
     },
+    {
+      id: 'credits',
+      header: '致谢',
+      footer: '感谢 FlowDown 为原生聊天体验带来的启发。',
+      rows: [
+        {
+          id: 'credit-flowdown',
+          title: 'FlowDown',
+          subtitle: '聊天架构与流式文字展示参考',
+          image: 'arrow.up.right.square',
+          action: true,
+        },
+      ],
+    },
   ];
 
   if (__DEV__)
@@ -111,6 +126,10 @@ export default function SettingsScreen() {
         if (nativeEvent.id === 'account')
           router.push(auth.account ? '/settings/account' : '/');
         if (nativeEvent.id === 'connection') refresh();
+        if (nativeEvent.id === 'credit-flowdown')
+          void Linking.openURL('https://github.com/Lakr233/FlowDown').catch(
+            () => showToast('暂时无法打开项目链接'),
+          );
       }}
     />
   );

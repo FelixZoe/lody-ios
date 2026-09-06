@@ -50,8 +50,16 @@ final class LodyGroupedList: ExpoView, UICollectionViewDelegate, UISearchBarDele
   let onRefresh = EventDispatcher()
   let onSegmentChange = EventDispatcher()
   private let segments = UISegmentedControl(items: [])
+  private let segmentContainer = UIView()
+  /// Before iOS 26 the bar has no edge effect to extend, so the strip carries
+  /// the bar's own material and reveals it the way `scrollEdgeAppearance` does.
+  private let segmentMaterial = UIVisualEffectView(
+    effect: UIBlurEffect(style: .systemChromeMaterial)
+  )
+  private let segmentHairline = UIView()
   private var scopeSearch: UISearchController?
   private var segmentLabels: [String] = []
+  private var segmentsUseSearchScope = false
   private var selectedSegment = 0
   private let appearance = ListAppearanceController()
   private weak var scrollOwner: UIViewController?
@@ -152,6 +160,24 @@ final class LodyGroupedList: ExpoView, UICollectionViewDelegate, UISearchBarDele
     addSubview(collection)
     addSubview(placeholder)
     segments.addTarget(self, action: #selector(segmentChanged), for: .valueChanged)
+    segmentContainer.isHidden = true
+    if #unavailable(iOS 26.0) {
+      segmentMaterial.alpha = 0
+      segmentHairline.backgroundColor = .separator
+      segmentHairline.alpha = 0
+      segmentContainer.addSubview(segmentMaterial)
+      segmentContainer.addSubview(segmentHairline)
+    }
+    segmentContainer.addSubview(segments)
+    addSubview(segmentContainer)
+    if #available(iOS 26.0, *) {
+      // Registers the overlay with the scroll view so UIKit shapes the top edge
+      // effect around it. Without this the control floats with nothing behind it.
+      let interaction = UIScrollEdgeElementContainerInteraction()
+      interaction.scrollView = collection
+      interaction.edge = .top
+      segmentContainer.addInteraction(interaction)
+    }
     appearance.view = UIView(frame: .zero)
     appearance.view.isUserInteractionEnabled = false
     appearance.onWillAppear = { [weak self] animated, coordinator in
@@ -163,6 +189,20 @@ final class LodyGroupedList: ExpoView, UICollectionViewDelegate, UISearchBarDele
     super.layoutSubviews()
     collection.frame = bounds
     let insets = collection.adjustedContentInset
+    if !segmentContainer.isHidden {
+      // Content starts below the bar plus the strip; the strip sits in that gap.
+      let top = max(0, insets.top - collection.contentInset.top)
+      segmentContainer.frame = CGRect(x: 0, y: top, width: bounds.width, height: segmentBarHeight)
+      segments.frame = segmentContainer.bounds.insetBy(dx: 20, dy: 8)
+      if #unavailable(iOS 26.0) {
+        segmentMaterial.frame = segmentContainer.bounds
+        let hairline = 1 / UIScreen.main.scale
+        segmentHairline.frame = CGRect(
+          x: 0, y: segmentBarHeight - hairline, width: bounds.width, height: hairline
+        )
+        updateSegmentMaterial()
+      }
+    }
     placeholder.frame = bounds.inset(by: UIEdgeInsets(top: insets.top + 24, left: 32, bottom: insets.bottom + 24, right: 32))
     attachScrollOwner()
   }
@@ -213,12 +253,39 @@ final class LodyGroupedList: ExpoView, UICollectionViewDelegate, UISearchBarDele
   /// The bar owns the segmented control, the way Calendar's New sheet does:
   /// content scrolls under it and the navigation bar supplies the material and
   /// the scroll edge effect. A floating sibling view gets neither.
+  private var segmentBarHeight: CGFloat { 52 }
+
+  private func updateSegmentMaterial() {
+    guard #unavailable(iOS 26.0) else { return }
+    let scrolled = collection.contentOffset.y + collection.adjustedContentInset.top > 0.5
+    let alpha: CGFloat = scrolled ? 1 : 0
+    guard segmentMaterial.alpha != alpha else { return }
+    segmentMaterial.alpha = alpha
+    segmentHairline.alpha = alpha
+  }
+
+  func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    updateSegmentMaterial()
+  }
+
+  /// The edge effect covers the adjusted content inset region, and
+  /// `contentInset` feeds into that — unlike `additionalSafeAreaInsets`, which
+  /// this scroll view never sees because react-native-screens owns the safe area.
+  private func syncSegmentInset() {
+    let wanted = segmentContainer.isHidden ? 0 : segmentBarHeight
+    guard collection.contentInset.top != wanted else { return }
+    collection.contentInset.top = wanted
+    collection.verticalScrollIndicatorInsets.top = wanted
+    setNeedsLayout()
+  }
+
   private func attachSegments(to controller: UIViewController) {
     guard segments.numberOfSegments > 0 else { return }
     // No public API puts an arbitrary view in the bar's stacked palette; the
     // only thing that rides there is a search bar. Its scope bar, however, is a
     // real segmented control, and `.manual` activation keeps it visible without
     // search being active — the Calendar "New" layout, with public API only.
+    guard segmentsUseSearchScope else { return }
     let item = controller.navigationItem
     let search = scopeSearch ?? UISearchController(searchResultsController: nil)
     scopeSearch = search
@@ -229,8 +296,6 @@ final class LodyGroupedList: ExpoView, UICollectionViewDelegate, UISearchBarDele
     search.searchBar.scopeButtonTitles = segmentLabels
     search.searchBar.showsScopeBar = true
     search.searchBar.selectedScopeButtonIndex = selectedSegment
-    // Probe: can the palette drop the text field row and keep only the scope bar?
-    search.searchBar.searchTextField.isHidden = true
     item.preferredSearchBarPlacement = .stacked
     item.hidesSearchBarWhenScrolling = false
     item.searchController = search
@@ -238,7 +303,9 @@ final class LodyGroupedList: ExpoView, UICollectionViewDelegate, UISearchBarDele
 
   private func detachSegments() {
     guard let item = scrollOwner?.navigationItem else { return }
-    if item.searchController === scopeSearch { item.searchController = nil }
+    if scopeSearch != nil, item.searchController === scopeSearch {
+      item.searchController = nil
+    }
     scopeSearch = nil
   }
 
@@ -248,11 +315,17 @@ final class LodyGroupedList: ExpoView, UICollectionViewDelegate, UISearchBarDele
     onSegmentChange(["index": index])
   }
 
+  func setSegmentsUseSearchScope(_ value: Bool) {
+    segmentsUseSearchScope = value
+  }
+
   func setSegments(_ labels: [String]) {
     segmentLabels = labels
     segments.removeAllSegments()
     for (index, label) in labels.enumerated() { segments.insertSegment(withTitle: label, at: index, animated: false) }
     segments.selectedSegmentIndex = selectedSegment
+    segmentContainer.isHidden = labels.isEmpty || segmentsUseSearchScope
+    syncSegmentInset()
     if labels.isEmpty {
       detachSegments()
     } else if let controller = scrollOwner {

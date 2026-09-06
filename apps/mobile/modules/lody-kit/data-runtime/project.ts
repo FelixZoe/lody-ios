@@ -118,6 +118,33 @@ function summarizeItem(raw: any, entryId: string, identity: string) {
     return { itemId, rev: bump(key, text), type, text } as ItemSummary;
   }
 
+  if (type === 'image') {
+    const image = {
+      id: String(raw.imageId ?? ''),
+      fileName: String(raw.fileName ?? '图片'),
+      storageSessionId:
+        typeof raw.storageSessionId === 'string'
+          ? raw.storageSessionId
+          : undefined,
+      width:
+        typeof raw.width === 'number' && raw.width > 0 ? raw.width : undefined,
+      height:
+        typeof raw.height === 'number' && raw.height > 0
+          ? raw.height
+          : undefined,
+    };
+    return {
+      itemId,
+      rev: bump(key, JSON.stringify(image)),
+      type,
+      image,
+    } as ItemSummary;
+  }
+  if (type === 'file') {
+    const text = `文件：${String(raw.fileName ?? '附件')}`;
+    return { itemId, rev: bump(key, text), type: 'text', text } as ItemSummary;
+  }
+
   if (type === 'tool_call') {
     const diff = countDiff(raw.content);
     const permission = raw.permissionRequest

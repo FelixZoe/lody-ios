@@ -13,6 +13,9 @@ const config: ExpoConfig = {
     bundleIdentifier: 'app.innei.lody',
     supportsTablet: false,
     config: { usesNonExemptEncryption: false },
+    infoPlist: {
+      NSPhotoLibraryUsageDescription: '选择照片作为消息附件。',
+    },
   },
   plugins: ['expo-router', ['expo-dev-client', { toolsButton: false }]],
   experiments: { typedRoutes: true, reactCompiler: true },

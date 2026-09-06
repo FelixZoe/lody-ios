@@ -86,3 +86,5 @@ export {
   type NativeContextMenuAction,
   type NativeContextMenuProps,
 } from './menu/NativeContextMenu';
+
+export { NativeChat } from './chat/NativeChat';

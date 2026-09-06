@@ -196,9 +196,14 @@ export function appendUserTurn(
   }))
     entry.set(key, value);
   const items = entry.setContainer('items', new LoroList());
-  const item = items.pushContainer(new LoroMap());
-  item.set('type', 'text');
-  item.setContainer('text', new LoroText()).insert(0, text);
+  for (const block of config.inputBlocks ?? [{ type: 'text', text }]) {
+    const item = items.pushContainer(new LoroMap());
+    for (const [key, value] of Object.entries(block)) {
+      if (key === 'text')
+        item.setContainer('text', new LoroText()).insert(0, String(value));
+      else if (value !== undefined) item.set(key, value);
+    }
+  }
   const input = entry.setContainer('inputConfig', new LoroMap());
   for (const [key, value] of Object.entries(config))
     if (value !== undefined) input.set(key, value);
@@ -209,6 +214,7 @@ export async function sendTurn(args: {
   machineId: string;
   userId: string;
   text: string;
+  attachmentBlocks?: Record<string, any>[];
   cliType: string;
   agentType: string;
   resume?: string;
@@ -219,8 +225,31 @@ export async function sendTurn(args: {
   if (!state || state.id !== args.sessionId || !state.ready || state.sending)
     throw new Error('session_not_ready');
   const text = args.text.trim();
+  const attachments = args.attachmentBlocks ?? [];
   if (
-    !text ||
+    !Array.isArray(attachments) ||
+    attachments.length > 16 ||
+    attachments.some(
+      (block) =>
+        !block ||
+        !['image', 'file'].includes(block.type) ||
+        typeof block[block.type === 'image' ? 'imageId' : 'fileId'] !==
+          'string' ||
+        !block[block.type === 'image' ? 'imageId' : 'fileId'] ||
+        typeof block.mimeType !== 'string' ||
+        !Number.isInteger(block.sizeBytes) ||
+        block.sizeBytes <= 0 ||
+        (block.type === 'file' &&
+          (block.transport !== 'r2' ||
+            typeof block.sha256 !== 'string' ||
+            typeof block.fileName !== 'string' ||
+            typeof block.textPreview !== 'boolean' ||
+            typeof block.uploadedAt !== 'number')),
+    )
+  )
+    return { state: 'not_sent', reason: '附件信息无效，请重新选择' };
+  if (
+    (!text && !attachments.length) ||
     text.length > 32000 ||
     !args.userId ||
     !args.machineId ||
@@ -243,7 +272,7 @@ export async function sendTurn(args: {
       cliType: args.cliType,
       agentType: args.agentType,
       prompt: text,
-      inputBlocks: [{ type: 'text', text }],
+      inputBlocks: [...(text ? [{ type: 'text', text }] : []), ...attachments],
       // An explicit pick wins; otherwise the turn inherits what the session
       // already used, and an unset value leaves the machine on its default.
       modeId: args.modeId ?? previous.modeId,

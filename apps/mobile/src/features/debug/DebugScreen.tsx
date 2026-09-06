@@ -1,3 +1,5 @@
+import { chatPreviewPage } from './ChatPreview';
+import { shinePreviewPage } from './ShinePreview';
 import { Link, useTheme } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
@@ -68,6 +70,18 @@ export default function DebugScreen() {
     );
   return (
     <Screen>
+      <Button
+        testID="chat-preview"
+        onPress={() => void present(chatPreviewPage, {})}
+      >
+        原生聊天预览
+      </Button>
+      <Button
+        testID="chat-shine-preview"
+        onPress={() => void present(shinePreviewPage, {})}
+      >
+        过程高光
+      </Button>
       <Text style={{ color: colors.text, fontSize: 22, fontWeight: '600' }}>
         数据运行时
       </Text>

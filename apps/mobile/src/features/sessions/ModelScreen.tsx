@@ -19,6 +19,17 @@ type Params = {
 
 const DEFAULT = 'lody:default';
 
+/**
+ * Whether this agent offers more than models. Derived from the capability rather
+ * than the current pick, so tabs never appear or vanish mid-selection.
+ */
+export function hasModelTabs(capability: Capability) {
+  return (
+    capability.modes.length > 0 ||
+    Object.keys(capability.reasoningEfforts).length > 0
+  );
+}
+
 export function modelSummary(capability: Capability, value: ModelChoice) {
   const model = capability.models.find((m) => m.id === value.modelId);
   const mode = capability.modes.find((m) => m.id === value.modeId);
@@ -36,11 +47,13 @@ function ModelScreen() {
     ? (capability.reasoningEfforts[value.modelId] ?? [])
     : [];
 
-  const tabs = [
-    { id: 'model', title: '模型' },
-    ...(efforts.length ? [{ id: 'effort', title: '强度' }] : []),
-    ...(capability.modes.length ? [{ id: 'mode', title: '模式' }] : []),
-  ];
+  const tabs = hasModelTabs(capability)
+    ? [
+        { id: 'model', title: '模型' },
+        ...(efforts.length ? [{ id: 'effort', title: '强度' }] : []),
+        ...(capability.modes.length ? [{ id: 'mode', title: '模式' }] : []),
+      ]
+    : [{ id: 'model', title: '模型' }];
   const [tab, setTab] = useState(0);
   const active = tabs[Math.min(tab, tabs.length - 1)]!.id;
 
@@ -104,7 +117,7 @@ function ModelScreen() {
       accent={colors.accent}
       transparent
       sections={sections}
-      segments={tabs.map((entry) => entry.title)}
+      segments={tabs.length > 1 ? tabs.map((entry) => entry.title) : undefined}
       selectedSegment={Math.min(tab, tabs.length - 1)}
       onSegmentChange={({ nativeEvent }) => setTab(nativeEvent.index)}
       placeholder=""

@@ -29,8 +29,13 @@ final class LodyTitleMenu: ExpoView {
     super.layoutSubviews()
     let pad = leadingInset()
     button.sizeToFit()
-    let width = min(max(button.intrinsicContentSize.width, 44), max(44, bounds.width - pad))
-    button.frame = CGRect(x: pad, y: 0, width: width, height: bounds.height)
+    button.layoutIfNeeded()
+    let titleShift = button.titleLabel?.frame.minX ?? 0
+    let width = min(
+      max(button.intrinsicContentSize.width, 44),
+      max(44, bounds.width - pad + titleShift)
+    )
+    button.frame = CGRect(x: pad - titleShift, y: 0, width: width, height: bounds.height)
   }
 
   override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
@@ -38,7 +43,7 @@ final class LodyTitleMenu: ExpoView {
   }
 
   private func leadingInset() -> CGFloat {
-    let target: CGFloat = 20 + 22
+    let target: CGFloat = 20
     guard let window else { return target }
     return max(0, target - convert(.zero, to: window).x)
   }

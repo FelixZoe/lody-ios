@@ -72,3 +72,9 @@ UI 首要目标是符合 [Apple HIG](https://developer.apple.com/design/human-in
 附件与图片展示、完整工具卡片和权限交互尚未实现。
 
 本轮验证：`pnpm check`、8 项行为测试、Hermes bundle 与正常签名的 iOS 模拟器构建通过；模拟器确认项目搜索、真实消息 Markdown、键盘避让、浅深色、原生设置行到 Debug 的导航，以及 Debug 注入 JS 卡死后的看门狗恢复。构建过程中修复了原生 UICollectionView 误套 RN ScrollViewMarker 导致的启动崩溃。
+
+## 致谢
+
+感谢 [FlowDown](https://github.com/Lakr233/FlowDown) 及其作者与贡献者。Lody 的原生聊天列表、Markdown 解析与测量缓存，以及流式文字的均匀分批展示参考了该项目的 `MessageListView`、`MarkdownTextView` 和 `BalancedEmitter` 架构。
+
+聊天内容与输入区由 LodyKit 内的 Swift/UIKit 实现，使用 `UICollectionView` 长列表；生成时展开执行过程，文字显示完毕后折叠。此阶段未直接引入 FlowDown 源码或依赖，文字选择与代码高亮暂缓。原生行为检查与开发预览见 [Chat verification](apps/mobile/modules/lody-kit/verification/chat/README.md)。

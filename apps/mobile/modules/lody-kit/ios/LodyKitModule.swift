@@ -130,6 +130,22 @@ public final class LodyKitModule: Module {
       ]]
     }
 
+    View(LodyChatView.self) {
+      Events("onSend", "onActivityPress", "onReconnect", "onTitlePress")
+      Prop("navigationTitle") { (view: LodyChatView, value: String) in view.setNavigationTitle(value) }
+      Prop("attachmentContextJSON") { (view: LodyChatView, value: String) in view.setAttachmentContext(value) }
+      Prop("entriesJSON") { (view: LodyChatView, value: String) in view.setEntries(value) }
+      Prop("processStartId") { (view: LodyChatView, value: String) in view.setProcessStartID(value) }
+      Prop("processEntryId") { (view: LodyChatView, value: String) in view.setProcessEntryID(value) }
+      Prop("composerJSON") { (view: LodyChatView, value: String) in view.setComposerState(value) }
+      Prop("initialDraft") { (view: LodyChatView, value: String) in view.setInitialDraft(value) }
+      Prop("clearDraftToken") { (view: LodyChatView, value: Int) in
+        view.clearDraft(token: value)
+      }
+      Prop("restoreDraftToken") { (view: LodyChatView, value: Int) in view.restoreDraft(token: value) }
+      Prop("emptyText") { (view: LodyChatView, value: String) in view.setEmptyText(value) }
+    }
+
     View(LodyGroupedList.self) {
       Prop("contentStyle") { (view: LodyGroupedList, value: Bool) in
         view.setContentStyle(value)
@@ -139,6 +155,9 @@ public final class LodyKitModule: Module {
       Prop("selectedSegment") { (view: LodyGroupedList, index: Int) in view.setSelectedSegment(index) }
       Prop("sections") { (view: LodyGroupedList, sections: [LodyListSection]) in
         view.setSections(sections)
+      }
+      Prop("segmentsUseSearchScope") { (view: LodyGroupedList, value: Bool) in
+        view.setSegmentsUseSearchScope(value)
       }
       Prop("transparent") { (view: LodyGroupedList, transparent: Bool) in
         view.setTransparent(transparent)

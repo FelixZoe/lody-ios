@@ -18,7 +18,12 @@ import { Composer } from '@/ui/Composer';
 import { showToast } from '@/ui/toast';
 import { draftTitle } from './draftTitle';
 import { pickerPage } from './PickerScreen';
-import { type ModelChoice, modelPage, modelSummary } from './ModelScreen';
+import {
+  hasModelTabs,
+  type ModelChoice,
+  modelPage,
+  modelSummary,
+} from './ModelScreen';
 
 type Params = {
   workspaceId: string;
@@ -270,7 +275,10 @@ function CreateSessionScreen() {
     await push(
       modelPage,
       { capability, value: choice, onChange: setChoice },
-      { title: agent?.name ?? '模型' },
+      // A single tab needs no segmented control, so the title names it instead.
+      {
+        title: hasModelTabs(capability) ? (agent?.name ?? '模型') : '选择模型',
+      },
     );
   }
 

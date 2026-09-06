@@ -166,7 +166,7 @@ export async function registerProject(
         contentType: 'application/octet-stream',
         body: encodeFrame(new TextEncoder().encode(JSON.stringify(update))),
       },
-      });
+    });
     if (!result.ok) throw new Error(result.result.code);
   } catch {
     throw new Error('project_write_unknown');

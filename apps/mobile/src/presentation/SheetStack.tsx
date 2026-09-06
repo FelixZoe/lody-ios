@@ -56,6 +56,7 @@ function headerConfig(
     title: presentation.title ?? page.title,
     hidden: !presentation.headerShown,
     topInsetEnabled: false,
+    backButtonDisplayMode: 'minimal',
     translucent: true,
     hideShadow: true,
     backgroundColor: 'transparent',
@@ -84,9 +85,13 @@ export function SheetStack({
   const nextKey = useRef(1);
   const pendingLevels = useRef(levels);
   pendingLevels.current = levels;
-  useEffect(() => () => {
-    for (const level of pendingLevels.current) level.settle({ status: 'cancelled' });
-  }, []);
+  useEffect(
+    () => () => {
+      for (const level of pendingLevels.current)
+        level.settle({ status: 'cancelled' });
+    },
+    [],
+  );
 
   const drop = useCallback(
     (key: number, result: PresentationResult<unknown>) => {
