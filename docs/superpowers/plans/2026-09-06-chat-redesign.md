@@ -1272,13 +1272,34 @@ import { acceptEnvelope } from '../src/features/sessions/acceptEnvelope.ts';
 test('信封校验：版本、generation、revision 三道闸', () => {
   const at = (generation, revision) => ({ generation, revision });
 
-  assert.equal(acceptEnvelope(at(3, 10), { generation: 3 }, { v: 2, revision: 11 }), 'drop');
-  assert.equal(acceptEnvelope(at(3, 10), { generation: 2 }, { v: 1, revision: 11 }), 'drop');
-  assert.equal(acceptEnvelope(at(3, 10), { generation: 3 }, { v: 1, revision: 10 }), 'drop');
-  assert.equal(acceptEnvelope(at(3, 10), { generation: 3 }, { v: 1, revision: 9 }), 'drop');
-  assert.equal(acceptEnvelope(at(3, 10), { generation: 3 }, { v: 1, revision: 11 }), 'accept');
-  assert.equal(acceptEnvelope(at(3, 10), { generation: 4 }, { v: 1, revision: 1 }), 'reset');
-  assert.equal(acceptEnvelope(at(-1, -1), { generation: 0 }, { v: 1, revision: 1 }), 'reset');
+  assert.equal(
+    acceptEnvelope(at(3, 10), { generation: 3 }, { v: 2, revision: 11 }),
+    'drop',
+  );
+  assert.equal(
+    acceptEnvelope(at(3, 10), { generation: 2 }, { v: 1, revision: 11 }),
+    'drop',
+  );
+  assert.equal(
+    acceptEnvelope(at(3, 10), { generation: 3 }, { v: 1, revision: 10 }),
+    'drop',
+  );
+  assert.equal(
+    acceptEnvelope(at(3, 10), { generation: 3 }, { v: 1, revision: 9 }),
+    'drop',
+  );
+  assert.equal(
+    acceptEnvelope(at(3, 10), { generation: 3 }, { v: 1, revision: 11 }),
+    'accept',
+  );
+  assert.equal(
+    acceptEnvelope(at(3, 10), { generation: 4 }, { v: 1, revision: 1 }),
+    'reset',
+  );
+  assert.equal(
+    acceptEnvelope(at(-1, -1), { generation: 0 }, { v: 1, revision: 1 }),
+    'reset',
+  );
 });
 ```
 
@@ -1312,7 +1333,11 @@ test('权限作答：过期 / 非法 option / 已有 outcome / 重复同答', as
   const outcomeOf = () =>
     runtime.docSnapshot().history[0].items[0].permissionRequest.outcome;
 
-  const stale = await runtime.respondPermission({ ...args, requestId: 'gone', optionId: 'once' });
+  const stale = await runtime.respondPermission({
+    ...args,
+    requestId: 'gone',
+    optionId: 'once',
+  });
   assert.equal(stale.state, 'stale');
   assert.equal(outcomeOf(), undefined);
 
@@ -1322,15 +1347,27 @@ test('权限作答：过期 / 非法 option / 已有 outcome / 重复同答', as
   );
   assert.equal(outcomeOf(), undefined);
 
-  const first = await runtime.respondPermission({ ...args, requestId: 'r1', optionId: 'once' });
+  const first = await runtime.respondPermission({
+    ...args,
+    requestId: 'r1',
+    optionId: 'once',
+  });
   assert.equal(first.state, 'accepted');
   assert.equal(outcomeOf().optionId, 'once');
 
-  const again = await runtime.respondPermission({ ...args, requestId: 'r1', optionId: 'once' });
+  const again = await runtime.respondPermission({
+    ...args,
+    requestId: 'r1',
+    optionId: 'once',
+  });
   assert.equal(again.state, 'accepted');
   assert.equal(outcomeOf().optionId, 'once');
 
-  const conflict = await runtime.respondPermission({ ...args, requestId: 'r1', optionId: 'no' });
+  const conflict = await runtime.respondPermission({
+    ...args,
+    requestId: 'r1',
+    optionId: 'no',
+  });
   assert.equal(conflict.state, 'conflict');
   assert.equal(outcomeOf().optionId, 'once');
 });

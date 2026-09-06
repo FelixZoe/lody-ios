@@ -28,8 +28,11 @@ public final class LodyKitModule: Module {
     AsyncFunction("watchSession") { (id: String) in self.dataRuntime.openSession(id) }.runOnQueue(.main)
     AsyncFunction("unwatchSession") { (id: String) in self.dataRuntime.closeSession(id) }.runOnQueue(.main)
     AsyncFunction("sessionCreationOptions") { (payload: String, promise: Promise) in self.dataRuntime.command("creationOptions", payload: payload, promise: promise) }.runOnQueue(.main)
+    AsyncFunction("localProjects") { (payload: String, promise: Promise) in self.dataRuntime.command("localProjects", payload: payload, promise: promise) }.runOnQueue(.main)
     AsyncFunction("createSession") { (payload: String, promise: Promise) in self.dataRuntime.command("createSession", payload: payload, promise: promise) }.runOnQueue(.main)
     AsyncFunction("sendSessionTurn") { (payload: String, promise: Promise) in self.dataRuntime.sendTurn(payload, promise: promise) }.runOnQueue(.main)
+    AsyncFunction("sessionItemDetail") { (payload: String, promise: Promise) in self.dataRuntime.command("itemDetail", payload: payload, promise: promise) }.runOnQueue(.main)
+    AsyncFunction("respondSessionPermission") { (payload: String, promise: Promise) in self.dataRuntime.command("respondPermission", payload: payload, promise: promise) }.runOnQueue(.main)
     AsyncFunction("dataRuntimeStatus") { self.dataRuntime.status() }.runOnQueue(.main)
     AsyncFunction("debugProbeSchema") { (promise: Promise) in
       #if DEBUG
@@ -88,12 +91,31 @@ public final class LodyKitModule: Module {
       self.sendEvent("onAppActive", [:])
     }
 
+    Function("showToast") { (message: String, kind: String) in
+      if Thread.isMainThread {
+        LodyToastOverlay.shared.show(message: message, kind: kind)
+      } else {
+        DispatchQueue.main.async {
+          LodyToastOverlay.shared.show(message: message, kind: kind)
+        }
+      }
+    }
+
     AsyncFunction("selectionFeedback") {
       UISelectionFeedbackGenerator().selectionChanged()
     }.runOnQueue(.main)
 
     Function("saveInboxView") { (index: Int) in
       UserDefaults.standard.set(index == 1 ? 1 : 0, forKey: "inboxView")
+    }
+
+    Function("readInboxExpansion") {
+      UserDefaults.standard.dictionary(forKey: "inboxExpansion") as? [String: Bool] ?? [:]
+    }
+    Function("saveInboxExpansion") { (projectID: String, expanded: Bool) in
+      var values = UserDefaults.standard.dictionary(forKey: "inboxExpansion") as? [String: Bool] ?? [:]
+      values[projectID] = expanded
+      UserDefaults.standard.set(values, forKey: "inboxExpansion")
     }
 
     Constants {
@@ -139,6 +161,19 @@ public final class LodyKitModule: Module {
       Prop("focused") { (view: LodySearchBar, focused: Bool) in view.setFocused(focused) }
     }
 
+    View(LodyTitleMenu.self) {
+      Events("onSelect")
+      Prop("label") { (view: LodyTitleMenu, label: String) in
+        view.setLabel(label)
+      }
+      Prop("accessibilityName") { (view: LodyTitleMenu, name: String) in
+        view.setAccessibilityName(name)
+      }
+      Prop("items") { (view: LodyTitleMenu, items: [LodyTitleMenuItem]) in
+        view.setItems(items)
+      }
+    }
+
     View(LodyCloseButton.self) {
       Events("onClose")
       Prop("label") { (view: LodyCloseButton, label: String) in
@@ -162,6 +197,13 @@ public final class LodyKitModule: Module {
       }
       Prop("tint") { (view: LodySymbolButton, tint: String) in
         view.setTint(tint)
+      }
+    }
+
+    View(LodyContextMenu.self) {
+      Events("onAction")
+      Prop("actions") { (view: LodyContextMenu, actions: [LodyContextMenuAction]) in
+        view.setActions(actions)
       }
     }
 

@@ -1,0 +1,54 @@
+export type ItemSummary =
+  | { itemId: string; rev: number; type: 'text'; text: string }
+  | { itemId: string; rev: number; type: 'thought'; text: string }
+  | {
+      itemId: string;
+      rev: number;
+      type: 'tool_call';
+      kind: string;
+      title: string;
+      status: string;
+      path?: string;
+      added?: number;
+      removed?: number;
+      hasDetail: boolean;
+      permission?: { requestId: string; pending: boolean };
+    }
+  | {
+      itemId: string;
+      rev: number;
+      type: 'plan';
+      entries: { content: string; status: string; priority?: string }[];
+    }
+  | {
+      itemId: string;
+      rev: number;
+      type: 'subagent_task';
+      taskId: string;
+      status: string;
+      actor?: string;
+      description?: string;
+    }
+  | { itemId: string; rev: number; type: string };
+
+export type EntrySummary = {
+  id: string;
+  rev: number;
+  role: string;
+  status: string;
+  finished: boolean;
+  timestamp?: string;
+  startedAt?: number;
+  endedAt?: number;
+  permissionWaitMs?: number;
+  items: ItemSummary[];
+};
+
+export type Envelope = {
+  v: 1;
+  status: string;
+  reason?: string;
+  revision: number;
+  awaitingUserSince?: number;
+  entries: EntrySummary[];
+};

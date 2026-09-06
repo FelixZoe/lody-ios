@@ -2,6 +2,13 @@ import { LoroDoc, LoroMap, LoroList, LoroText } from 'loro-crdt/base64';
 import { StreamsClient } from '@loro-dev/streams-client';
 import { decompress } from 'fzstd';
 import { decodeFrames, encodeFrame } from '../decoder/frames';
+import {
+  identityAt,
+  itemRev,
+  projectSession,
+  resetProjection,
+} from './project';
+export { projectSession } from './project';
 
 type Grant = { token: string; gatewayBaseUrl: string };
 let active:
@@ -18,48 +25,53 @@ let active:
       emit: (event: object) => void;
     }
   | undefined;
+let pending: ReturnType<typeof setTimeout> | undefined;
+let firstQueuedAt = 0;
+let lastSignal = '';
+function signalOf(state: NonNullable<typeof active>, status: string) {
+  const history = state.doc.getList('history');
+  let finished = 0;
+  for (let i = 0; i < history.length; i++) {
+    const entry = history.get(i);
+    if (entry instanceof LoroMap && entry.get('finished') === true) finished++;
+  }
+  const awaiting = state.doc.getMap('session').get('awaitingUserSince') != null;
+  return `${status}|${awaiting}|${finished}`;
+}
+function scheduleEmit(
+  state: NonNullable<typeof active>,
+  status: string,
+  reason?: string,
+) {
+  const flush = () => {
+    pending = undefined;
+    firstQueuedAt = 0;
+    if (active !== state) return;
+    state.emit({
+      type: 'session',
+      sessionId: state.id,
+      session: JSON.stringify(projectSession(state.doc, status, reason)),
+    });
+  };
+  if (pending) clearTimeout(pending);
+  const signal = signalOf(state, status);
+  const now = Date.now();
+  if (signal !== lastSignal || (firstQueuedAt && now - firstQueuedAt >= 200)) {
+    lastSignal = signal;
+    flush();
+    return;
+  }
+  if (!firstQueuedAt) firstQueuedAt = now;
+  pending = setTimeout(flush, 100);
+}
 export function closeSession() {
+  unsent.clear();
+  if (pending) clearTimeout(pending);
+  pending = undefined;
+  firstQueuedAt = 0;
+  lastSignal = '';
   active?.controller.abort();
   active = undefined;
-}
-export function projectHistory(doc: LoroDoc) {
-  const history = doc.toJSON().history;
-  if (!Array.isArray(history)) return [];
-  // A daemon history-sync timeout can place a concurrent reply before its input.
-  // Use its explicit causal link; never sort streamed turns by arrival time.
-  const userIds = new Set(
-    history.filter((e: any) => e.role === 'user').map((e: any) => e.id),
-  );
-  const replies = new Map<string, any[]>();
-  for (const entry of history)
-    if (entry.role === 'assistant' && userIds.has(entry.userTurnId)) {
-      const group = replies.get(entry.userTurnId) ?? [];
-      group.push(entry);
-      replies.set(entry.userTurnId, group);
-    }
-  const ordered = history.flatMap((entry: any) =>
-    entry.role === 'assistant' && userIds.has(entry.userTurnId)
-      ? []
-      : [
-          entry,
-          ...(entry.role === 'user' ? (replies.get(entry.id) ?? []) : []),
-        ],
-  );
-  return ordered.map((entry: any) => ({
-    id: String(entry.id),
-    role: String(entry.role),
-    status: entry.status ?? (entry.read ? 'seen' : 'pending'),
-    finished: entry.finished === true,
-    items: Array.isArray(entry.items)
-      ? entry.items.map((item: any) => ({
-          type: String(item.type),
-          text: typeof item.text === 'string' ? item.text : '',
-          // Preserve a visible placeholder for blocks this text-only POC cannot render.
-          label:
-            typeof item.title === 'string' ? item.title : String(item.type),
-        }))
-      : [],
-  }));
 }
 function unpack(bytes: Uint8Array) {
   return bytes[0] === 0x28 &&
@@ -103,17 +115,9 @@ export async function openSession(
     emit,
   };
   active = state;
+  resetProjection();
   const event = (status: string, reason?: string) => {
-    if (active === state)
-      emit({
-        type: 'session',
-        sessionId: id,
-        session: JSON.stringify({
-          status,
-          reason,
-          messages: projectHistory(state.doc),
-        }),
-      });
+    if (active === state) scheduleEmit(state, status, reason);
   };
   event('syncing');
   void (async () => {
@@ -208,6 +212,8 @@ export async function sendTurn(args: {
   cliType: string;
   agentType: string;
   resume?: string;
+  modelId?: string;
+  modeId?: string;
 }) {
   const state = active;
   if (!state || state.id !== args.sessionId || !state.ready || state.sending)
@@ -238,8 +244,10 @@ export async function sendTurn(args: {
       agentType: args.agentType,
       prompt: text,
       inputBlocks: [{ type: 'text', text }],
-      modeId: previous.modeId,
-      modelId: previous.modelId,
+      // An explicit pick wins; otherwise the turn inherits what the session
+      // already used, and an unset value leaves the machine on its default.
+      modeId: args.modeId ?? previous.modeId,
+      modelId: args.modelId ?? previous.modelId,
       configOptionValues: previous.configOptionValues,
       mcpServerIds: previous.mcpServerIds ?? [],
       taskToolsEnabled: previous.taskToolsEnabled ?? false,
@@ -257,14 +265,7 @@ export async function sendTurn(args: {
     uploaded = true;
     await state.markDispatch(state.id, id);
     if (active !== state) throw new Error('runtime_replaced');
-    state.emit({
-      type: 'session',
-      sessionId: state.id,
-      session: JSON.stringify({
-        status: 'live',
-        messages: projectHistory(state.doc),
-      }),
-    });
+    scheduleEmit(state, 'live');
     const replyTo = `${state.workspace}:rpc:res:${args.machineId}:${crypto.randomUUID()}`;
     const responseClient = await clientFor(replyTo, state.getGrant);
     const created = await responseClient.create({
@@ -342,4 +343,117 @@ export async function sendTurn(args: {
   } finally {
     state.sending = false;
   }
+}
+
+export function docSnapshot() {
+  return active?.doc.toJSON();
+}
+function locateItem(entryId: string, itemId: string) {
+  const state = active;
+  if (!state) return undefined;
+  const history = state.doc.getList('history');
+  for (let i = 0; i < history.length; i++) {
+    const entry = history.get(i);
+    if (!(entry instanceof LoroMap) || entry.get('id') !== entryId) continue;
+    const items = entry.get('items');
+    if (!(items instanceof LoroList)) return undefined;
+    for (let j = 0; j < items.length; j++) {
+      const item = items.get(j);
+      if (!(item instanceof LoroMap)) continue;
+      const id =
+        item.get('type') === 'tool_call' &&
+        typeof item.get('toolCallId') === 'string'
+          ? (item.get('toolCallId') as string)
+          : identityAt(items, j);
+      if (id === itemId) return item;
+    }
+    return undefined;
+  }
+  return undefined;
+}
+const DETAIL_LIMIT = 512 * 1024;
+export async function itemDetail(args: {
+  sessionId: string;
+  entryId: string;
+  itemId: string;
+  cursor?: string;
+}) {
+  if (!active || active.id !== args.sessionId)
+    throw new Error('session_not_ready');
+  const item = locateItem(args.entryId, args.itemId);
+  const raw: any = item?.toJSON() ?? {};
+  const content: unknown[] = Array.isArray(raw.content) ? raw.content : [];
+  const start = Math.max(0, Number(args.cursor ?? 0) || 0);
+  const blocks: unknown[] = [];
+  let size = 0;
+  let next = content.length;
+  for (let i = start; i < content.length; i++) {
+    const bytes = JSON.stringify(content[i]).length;
+    if (blocks.length && size + bytes > DETAIL_LIMIT) {
+      next = i;
+      break;
+    }
+    blocks.push(content[i]);
+    size += bytes;
+  }
+  const truncated = next < content.length;
+  return {
+    itemId: args.itemId,
+    rev: itemRev(args.entryId, args.itemId),
+    blocks,
+    rawInput: raw.rawInput,
+    rawOutput: raw.rawOutput,
+    options: raw.permissionRequest?.options,
+    outcome: raw.permissionRequest?.outcome,
+    truncated,
+    nextCursor: truncated ? String(next) : undefined,
+  };
+}
+const unsent = new Map<string, ReturnType<LoroDoc['version']>>();
+export async function respondPermission(args: {
+  sessionId: string;
+  entryId: string;
+  itemId: string;
+  requestId: string;
+  optionId: string;
+}) {
+  const state = active;
+  if (!state || state.id !== args.sessionId || !state.ready)
+    throw new Error('session_not_ready');
+  const item = locateItem(args.entryId, args.itemId);
+  const request = item?.get('permissionRequest');
+  const current: any =
+    request instanceof LoroMap ? request.toJSON() : (request ?? undefined);
+  if (!item || !current || current.requestId !== args.requestId)
+    return { state: 'stale' as const };
+  const options: any[] = Array.isArray(current.options) ? current.options : [];
+  if (!options.some((o) => o?.optionId === args.optionId))
+    throw new Error('invalid_option');
+  const key = `${args.entryId}/${args.itemId}/${args.requestId}`;
+  if (current.outcome != null) {
+    if (current.outcome.optionId !== args.optionId)
+      return { state: 'conflict' as const };
+    if (!unsent.has(key)) return { state: 'accepted' as const };
+  }
+  const before = unsent.get(key) ?? state.doc.version();
+  if (current.outcome == null) {
+    const outcome = { outcome: 'selected', optionId: args.optionId };
+    if (request instanceof LoroMap) request.set('outcome', outcome);
+    else item.set('permissionRequest', { ...current, outcome });
+    state.doc.commit();
+  }
+  const result = await state.client.append({
+    part: {
+      contentType: 'application/octet-stream',
+      body: encodeFrame(state.doc.export({ mode: 'update', from: before })),
+    },
+  });
+  if (!result.ok) {
+    // A user-initiated retry re-exports from this version; nothing replays on its own.
+    unsent.set(key, before);
+    throw new Error('upload_failed');
+  }
+  unsent.delete(key);
+  if (active === state) scheduleEmit(state, 'live');
+  return { state: 'accepted' as const };
 }

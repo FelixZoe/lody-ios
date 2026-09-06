@@ -1,4 +1,9 @@
 import {
+  projectControl,
+  directoryResult,
+  registerProject,
+} from './local-projects';
+import {
   creationOptions,
   createSession,
   type CreateSessionArgs,
@@ -10,6 +15,8 @@ import { projectRows, type Catalog } from '../../../src/cloud/model';
 import {
   openSession,
   closeSession,
+  itemDetail,
+  respondPermission,
   sendTurn as sendSessionTurn,
 } from './session';
 import { decodeFrames, encodeFrame } from '../decoder/frames';
@@ -55,6 +62,8 @@ let metaReplica: { flock: Flock; client: StreamsClient } | undefined;
 let workspace = '';
 const machineReplicas = new Map<string, Flock>();
 let creating = false;
+let registering = false;
+const browsers = new Map<string, AbortController>();
 
 async function markDispatch(sessionId: string, turnId: string) {
   if (!metaReplica) throw new Error('metadata_not_ready');
@@ -261,6 +270,27 @@ Object.assign(globalThis, {
           ? Object.keys(value as Record<string, unknown>).sort()
           : [];
       const report: Record<string, unknown> = {};
+      // Run the real projection here so its exception text survives; a JS throw
+      // reaches Swift as a generic WKError with no message.
+      const trials: Record<string, string> = {};
+      for (const catalog of catalogs.values())
+        for (const project of catalog.projects) {
+          if (trials[project.id]) continue;
+          try {
+            const value = creationOptions(
+              project.id,
+              metaReplica!.flock,
+              machineReplicas,
+            );
+            trials[project.id] =
+              `ok agents=${value.agents.length} capabilities=${value.capabilities.length}`;
+          } catch (error) {
+            trials[project.id] = `THREW ${String(
+              error,
+            )} | ${(error as Error)?.stack ?? ''}`.slice(0, 400);
+          }
+        }
+      report.creationOptionsTrial = trials;
       for (const [machineId, flock] of machineReplicas) {
         const capabilities: unknown[] = [];
         const otherKeys = new Set<string>();
@@ -284,6 +314,115 @@ Object.assign(globalThis, {
         report[machineId] = { otherKeys: [...otherKeys].sort(), capabilities };
       }
       return report;
+    },
+    async localProjects(args: {
+      workspaceId: string;
+      browserId: string;
+      action: string;
+      machineId?: string;
+      path?: string;
+      cursor?: string;
+    }) {
+      if (args.workspaceId !== workspace || !args.browserId)
+        throw new Error('metadata_not_ready');
+      if (args.action === 'cancel') {
+        browsers.get(args.browserId)?.abort();
+        browsers.delete(args.browserId);
+        return {};
+      }
+      if (!metaReplica || unhealthy.size) throw new Error('metadata_not_ready');
+      if (args.action === 'machines') {
+        return {
+          machines: (catalogs.get('meta')?.machineIds ?? []).map((id) => {
+            const meta = metaReplica!.flock;
+            const value = meta.get(['m', `machine-${id}`]) as
+              Record<string, unknown> | undefined;
+            const name =
+              meta.get(['m', `machine-${id}`, 'name']) ?? value?.name;
+            return {
+              id,
+              name: typeof name === 'string' && name ? name : '未命名电脑',
+            };
+          }),
+        };
+      }
+      const machineId = args.machineId;
+      if (
+        !machineId ||
+        !machineReplicas.has(machineId) ||
+        !['browse', 'add'].includes(args.action)
+      )
+        throw new Error('machine_unavailable');
+      if (
+        args.path !== undefined &&
+        (typeof args.path !== 'string' ||
+          args.path.length > 32768 ||
+          args.path.includes('\0'))
+      )
+        throw new Error('invalid_path');
+      let controller = browsers.get(args.browserId);
+      if (!controller) {
+        controller = new AbortController();
+        browsers.set(args.browserId, controller);
+      }
+      const signal = AbortSignal.any([
+        controller.signal,
+        AbortSignal.timeout(35000),
+      ]);
+      const flock = machineReplicas.get(machineId)!;
+      if (args.action === 'browse')
+        return directoryResult(
+          await projectControl(
+            workspace,
+            machineId,
+            {
+              type: 'local-project/browse-dir',
+              absolutePath: args.path,
+              cursor: args.cursor,
+              limit: 100,
+            },
+            getGrant,
+            signal,
+          ),
+        );
+      if (registering || !args.path) throw new Error('project_not_ready');
+      registering = true;
+      try {
+        const prepared = await projectControl(
+          workspace,
+          machineId,
+          { type: 'local-project/prepare-add', rootPath: args.path },
+          getGrant,
+          signal,
+        );
+        signal.throwIfAborted();
+        if (machineReplicas.get(machineId) !== flock)
+          throw new Error('metadata_not_ready');
+        const result = await registerProject(
+          workspace,
+          machineId,
+          prepared,
+          flock,
+          getGrant,
+          signal,
+        );
+        if (machineReplicas.get(machineId) === flock) {
+          catalogs.set(machineId, projectRows(flock.scan(), machineId));
+          publish();
+        }
+        return result;
+      } finally {
+        registering = false;
+      }
+    },
+    creationOptions(args: { workspaceId: string; projectId: string }) {
+      if (args.workspaceId !== workspace || !metaReplica || unhealthy.size)
+        throw new Error('metadata_not_ready');
+      return creationOptions(
+        args.projectId,
+        metaReplica.flock,
+        machineReplicas,
+      );
     },
     async createSession(args: CreateSessionArgs) {
       if (
@@ -322,6 +461,8 @@ Object.assign(globalThis, {
       return openSession(id, workspace, getGrant, send, markDispatch);
     },
     closeSession,
+    itemDetail,
+    respondPermission,
     sendTurn(args: Parameters<typeof sendSessionTurn>[0]) {
       if (!metaReplica) throw new Error('metadata_not_ready');
       return sendSessionTurn(args);

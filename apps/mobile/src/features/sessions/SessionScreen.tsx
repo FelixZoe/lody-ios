@@ -3,40 +3,42 @@ import { useCatalog } from '@/cloud/CatalogProvider';
 import { useEffect, useRef, useState } from 'react';
 import {
   FlatList,
-  KeyboardAvoidingView,
+  InputAccessoryView,
   Pressable,
   Text,
-  TextInput,
   View,
-  ActivityIndicator,
   Alert,
 } from 'react-native';
 import { usePalette } from '@/theme/palette';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MessageBubble, type Message } from './MessageBubble';
 import { ScrollViewMarker } from 'react-native-screens/experimental';
-import {
-  addDataRuntimeListener,
-  watchSession,
-  unwatchSession,
-  sendSessionTurn,
-} from '@lody-ios/kit';
-import { definePage, usePageRuntime } from '@/presentation';
+import { sendSessionTurn } from '@lody-ios/kit';
+import { definePage, present, usePageRuntime } from '@/presentation';
 import { useAuth } from '@/features/auth/AuthProvider';
 import { softScrollEdgeEffects } from '@/ui/Screen';
 import { Composer } from '@/ui/Composer';
 import { AppText } from '@/ui/AppText';
 import type { Session } from '@/cloud/model';
+import type { EntrySummary, ItemSummary } from './transcript/types';
+import type { Row } from './transcript/aggregate';
+import { Transcript } from './transcript/Transcript';
+import { pendingPermission, useSessionRuntime } from './useSessionRuntime';
+import { itemDetailPage } from './detail/itemDetailPage';
+import { permissionPage } from './detail/permissionPage';
 
-type SessionParams = { session: Session; initialDraft?: string };
-type Snapshot = { status: string; reason?: string; messages: Message[] };
+type SessionParams = {
+  session: Session;
+  initialDraft?: string;
+  modelId?: string;
+  modeId?: string;
+};
+const COMPOSER_ID = 'session-composer';
+
 function SessionScreen() {
   const {
-    params: { session, initialDraft },
+    params: { session, initialDraft, modelId, modeId },
   } = usePageRuntime<SessionParams>();
   const { account } = useAuth(),
     colors = usePalette();
-  const insets = useSafeAreaInsets();
   const { catalog } = useCatalog();
   const project = catalog.projects.find((p) => p.id === session.projectId);
   const currentSession =
@@ -48,53 +50,67 @@ function SessionScreen() {
         .filter(Boolean)
         .join('\n'),
     );
-  const [snapshot, setSnapshot] = useState<Snapshot>({
-    status: 'syncing',
-    messages: [],
-  });
+  const { snapshot, overflow, cursor, reconnect } = useSessionRuntime(
+    session.id,
+  );
   const [draft, setDraft] = useState(initialDraft ?? ''),
     [sending, setSending] = useState(false),
     [receipt, setReceipt] = useState('');
-  const [showJump, setShowJump] = useState(false);
   const [uncertain, setUncertain] = useState(false);
-  const viewportHeight = useRef(0),
-    contentHeight = useRef(0);
-  const list = useRef<FlatList<Message>>(null),
-    following = useRef(true),
+  const list = useRef<FlatList<any>>(null),
     busy = useRef(false),
-    autoSent = useRef(false);
-  useEffect(() => {
-    const subscription = addDataRuntimeListener((event) => {
-      if (event.sessionId === session.id && event.session) {
-        try {
-          const data = JSON.parse(event.session);
-          if (Array.isArray(data.messages)) setSnapshot(data);
-        } catch {
-          setSnapshot((old) => ({ ...old, status: 'offline' }));
-        }
-      } else if (
-        ['starting', 'background', 'failed', 'stopped'].includes(event.state)
-      ) {
-        setSnapshot((old) => ({ ...old, status: event.state }));
-      }
+    autoSent = useRef(false),
+    answered = useRef(new Set<string>());
+
+  const askPermission = (
+    entry: EntrySummary,
+    item: Extract<ItemSummary, { type: 'tool_call' }>,
+  ) =>
+    void present(permissionPage, {
+      sessionId: session.id,
+      entryId: entry.id,
+      itemId: item.itemId,
+      requestId: item.permission!.requestId,
+      generation: cursor.current.generation,
+      kind: item.kind,
+      title: item.title,
+      path: item.path,
     });
-    void watchSession(session.id).catch(() =>
-      setSnapshot((old) => ({ ...old, status: 'offline' })),
-    );
-    return () => {
-      subscription.remove();
-      void unwatchSession(session.id);
-    };
-  }, [session.id]);
+
   useEffect(() => {
-    if (!following.current && snapshot.messages.length) setShowJump(true);
-  }, [snapshot.messages]);
+    if (!snapshot.awaitingUserSince) return;
+    for (const entry of snapshot.entries) {
+      const item = pendingPermission(entry);
+      const requestId = item?.permission?.requestId;
+      if (!item || !requestId || answered.current.has(requestId)) continue;
+      answered.current.add(requestId);
+      askPermission(entry, item);
+      return;
+    }
+  }, [snapshot]);
+
   useEffect(() => {
     if (autoSent.current || !initialDraft || snapshot.status !== 'live') return;
     autoSent.current = true;
     void submit();
     // Dispatch once when the new session first goes live; never replay on reconnect.
   }, [snapshot.status, initialDraft]);
+
+  const onActivityPress = (entryId: string, row: Row) => {
+    if (row.kind !== 'activity') return;
+    const entry = snapshot.entries.find((e) => e.id === entryId);
+    const item = entry && pendingPermission(entry, row.pendingPermission);
+    if (entry && item && row.pendingPermission) {
+      askPermission(entry, item);
+      return;
+    }
+    void present(itemDetailPage, {
+      sessionId: session.id,
+      entryId,
+      itemIds: row.members,
+      generation: cursor.current.generation,
+    });
+  };
 
   async function submit() {
     if (
@@ -109,7 +125,6 @@ function SessionScreen() {
     busy.current = true;
     setSending(true);
     setReceipt('正在保存并通知机器…');
-    following.current = true;
     try {
       const result = JSON.parse(
         await sendSessionTurn(
@@ -121,6 +136,8 @@ function SessionScreen() {
             cliType: session.cliType,
             agentType: session.agentType,
             resume: session.resume,
+            modelId,
+            modeId,
           }),
         ),
       );
@@ -131,7 +148,8 @@ function SessionScreen() {
           ? '机器已接收'
           : `${result.state === 'uploaded' ? '消息已保存，正在等待电脑确认。' : '发送结果暂时无法确认，草稿已保留。'}请等待同步，不要重复发送。`,
       );
-    } catch (error) {
+      list.current?.scrollToEnd({ animated: true });
+    } catch {
       setUncertain(true);
       setReceipt('发送结果暂时无法确认，请等待同步，不要重复发送。');
     } finally {
@@ -154,16 +172,8 @@ function SessionScreen() {
       : disconnected
         ? '连接已暂停'
         : '正在连接…';
-  const scrollToLatest = () => {
-    following.current = true;
-    setShowJump(false);
-    list.current?.scrollToEnd({ animated: true });
-  };
   return (
-    <KeyboardAvoidingView
-      behavior="padding"
-      style={{ flex: 1, backgroundColor: colors.background }}
-    >
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       <Stack.Screen
         options={{
           title: currentSession.title,
@@ -184,164 +194,87 @@ function SessionScreen() {
           ),
         }}
       />
+      {overflow ? (
+        <AppText
+          accessibilityLiveRegion="polite"
+          variant="meta"
+          style={{
+            color: colors.warning,
+            textAlign: 'center',
+            paddingVertical: 6,
+          }}
+        >
+          同步已停止 · 内容可能不是最新
+        </AppText>
+      ) : null}
       <ScrollViewMarker
         style={{ flex: 1 }}
         scrollEdgeEffects={softScrollEdgeEffects}
       >
-        <FlatList
-          ref={list}
-          data={snapshot.messages}
-          keyExtractor={(item) => item.id}
-          contentInsetAdjustmentBehavior="automatic"
-          keyboardDismissMode="interactive"
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{
-            paddingHorizontal: 22,
-            paddingTop: 16,
-            paddingBottom: 24,
-            gap: 24,
-          }}
-          onScrollBeginDrag={() => {
-            following.current = false;
-          }}
-          onScroll={({ nativeEvent: e }) => {
-            if (!following.current) {
-              const near =
-                e.contentSize.height -
-                  e.contentOffset.y -
-                  e.layoutMeasurement.height <
-                100;
-              following.current = near;
-              if (near) setShowJump(false);
-            }
-          }}
-          scrollEventThrottle={100}
-          onLayout={({ nativeEvent }) => {
-            viewportHeight.current = nativeEvent.layout.height;
-            if (
-              following.current &&
-              contentHeight.current > viewportHeight.current
-            )
-              requestAnimationFrame(() =>
-                list.current?.scrollToEnd({ animated: false }),
-              );
-          }}
-          onContentSizeChange={(_, height) => {
-            contentHeight.current = height;
-            if (
-              following.current &&
-              viewportHeight.current > 0 &&
-              height > viewportHeight.current
-            )
-              requestAnimationFrame(() =>
-                list.current?.scrollToEnd({ animated: false }),
-              );
-          }}
-          ListEmptyComponent={
-            <View
-              style={{ paddingVertical: 60, alignItems: 'center', gap: 14 }}
-            >
-              {snapshot.status !== 'live' ? (
-                <ActivityIndicator color={colors.accent} />
-              ) : null}
-              <Text
-                style={{ color: colors.label, fontSize: 22, fontWeight: '600' }}
-              >
-                {snapshot.status === 'live'
-                  ? '想继续做些什么？'
-                  : '正在取回对话'}
-              </Text>
-              <Text
-                style={{
-                  color: colors.secondaryLabel,
-                  textAlign: 'center',
-                  lineHeight: 22,
-                }}
-              >
-                消息会与电脑同步，随时接着聊。
-              </Text>
-            </View>
-          }
-          renderItem={({ item }) => <MessageBubble message={item} />}
+        <Transcript
+          entries={snapshot.entries}
+          live={snapshot.status === 'live'}
+          listRef={list}
+          onActivityPress={onActivityPress}
         />
       </ScrollViewMarker>
-      {showJump ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="回到最新消息"
-          onPress={scrollToLatest}
+      <InputAccessoryView nativeID={COMPOSER_ID}>
+        <View
           style={{
-            alignSelf: 'center',
-            paddingHorizontal: 18,
-            paddingVertical: 12,
-            borderRadius: 22,
-            backgroundColor: colors.card,
-            borderColor: colors.separator,
-            borderWidth: 1,
-            marginBottom: 8,
+            paddingHorizontal: 16,
+            paddingTop: 10,
+            paddingBottom: 12,
+            gap: 10,
+            backgroundColor: colors.background,
           }}
         >
-          <Text style={{ color: colors.accent }}>↓ 最新消息</Text>
-        </Pressable>
-      ) : null}
-      <View
-        style={{
-          paddingHorizontal: 16,
-          paddingTop: 10,
-          paddingBottom: Math.max(insets.bottom, 12),
-          gap: 10,
-          backgroundColor: colors.background,
-        }}
-      >
-        {uncertain ? (
-          <AppText
-            accessibilityLiveRegion="polite"
-            variant="meta"
-            style={{ color: colors.danger }}
-          >
-            {receipt}
-          </AppText>
-        ) : null}
-        {disconnected ? (
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => {
-              void watchSession(session.id).catch(() =>
-                setSnapshot((old) => ({ ...old, status: 'offline' })),
-              );
-            }}
-            style={{ minHeight: 44, justifyContent: 'center' }}
-          >
-            <AppText variant="body" style={{ color: colors.accent }}>
-              连接已暂停 · 点此重新同步
+          {uncertain ? (
+            <AppText
+              accessibilityLiveRegion="polite"
+              variant="meta"
+              style={{ color: colors.danger }}
+            >
+              {receipt}
             </AppText>
-          </Pressable>
-        ) : null}
-        <Composer
-          testID="session-input"
-          placeholder={
-            currentSession.archived ? '此会话已归档' : '给 Lody 发消息…'
-          }
-          value={draft}
-          onChangeText={setDraft}
-          onSubmit={() => void submit()}
-          editable={!sending && !uncertain && !currentSession.archived}
-          submitDisabled={!canSend}
-          sending={sending}
-        />
-        {!disconnected &&
-        !uncertain &&
-        (sending || snapshot.status !== 'live') ? (
-          <AppText
-            accessibilityLiveRegion="polite"
-            variant="meta"
-            style={{ textAlign: 'center' }}
-          >
-            {sending ? '正在发送…' : connection}
-          </AppText>
-        ) : null}
-      </View>
-    </KeyboardAvoidingView>
+          ) : null}
+          {disconnected ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={reconnect}
+              style={{ minHeight: 44, justifyContent: 'center' }}
+            >
+              <AppText variant="body" style={{ color: colors.accent }}>
+                连接已暂停 · 点此重新同步
+              </AppText>
+            </Pressable>
+          ) : null}
+          <Composer
+            testID="session-input"
+            inputAccessoryViewID={COMPOSER_ID}
+            placeholder={
+              currentSession.archived ? '此会话已归档' : '给 Lody 发消息…'
+            }
+            value={draft}
+            onChangeText={setDraft}
+            onSubmit={() => void submit()}
+            editable={!sending && !uncertain && !currentSession.archived}
+            submitDisabled={!canSend}
+            sending={sending}
+          />
+          {!disconnected &&
+          !uncertain &&
+          (sending || snapshot.status !== 'live') ? (
+            <AppText
+              accessibilityLiveRegion="polite"
+              variant="meta"
+              style={{ textAlign: 'center' }}
+            >
+              {sending ? '正在发送…' : connection}
+            </AppText>
+          ) : null}
+        </View>
+      </InputAccessoryView>
+    </View>
   );
 }
 export const sessionPage = definePage<SessionParams>({

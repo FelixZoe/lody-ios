@@ -74,7 +74,7 @@ final class DataRuntime: NSObject, WKScriptMessageHandler, WKNavigationDelegate 
     } catch { disposeView(); publish("failed", reason: "missing_resource") }
   }
   private func disposeView() {
-    for promise in commands.values { promise.reject("runtime_replaced", "通信层已重建，发送结果请以同步记录为准") }; commands.removeAll()
+    for promise in commands.values { fail(promise, "runtime_replaced", "通信层已重建，发送结果请以同步记录为准") }; commands.removeAll()
     timer?.invalidate(); timer = nil
     grantTask?.cancel(); grantTask = nil
     pingPending = false
@@ -118,8 +118,11 @@ final class DataRuntime: NSObject, WKScriptMessageHandler, WKNavigationDelegate 
       #endif
     case "session":
       guard let id = body["sessionId"] as? String, id == sessionId,
-            let session = body["session"] as? String, session.utf8.count <= 12 * 1024 * 1024 else { return }
-      emit(status().merging(["sessionId": id, "session": session], uniquingKeysWith: { _, new in new }))
+            let session = body["session"] as? String else { return }
+      let payload = session.utf8.count <= 12 * 1024 * 1024
+        ? session
+        : #"{"v":1,"overflow":true}"#
+      emit(status().merging(["sessionId": id, "session": payload], uniquingKeysWith: { _, new in new }))
     case "grant": fetchGrant(view: view)
     case "catalog":
       guard let catalog = body["catalog"] as? String, catalog.utf8.count <= 12 * 1024 * 1024 else { return }
@@ -150,25 +153,75 @@ final class DataRuntime: NSObject, WKScriptMessageHandler, WKNavigationDelegate 
       data: JSONSerialization.data(withJSONObject: ["workspaceId": workspace]),
       encoding: .utf8
     ) else {
-      promise.reject("not_ready", "尚未连接工作区")
+      fail(promise, "not_ready", "尚未连接工作区")
       return
     }
     command("probeSchema", payload: payload, promise: promise)
   }
 
+  /// Expo's `reject(code:description:)` drops the description in this version,
+  /// so every failure reads "undefined reason". Carry the text in an NSError.
+  private func fail(_ promise: Promise, _ code: String, _ message: String) {
+    promise.reject(
+      NSError(
+        domain: "LodyKit.DataRuntime",
+        code: 1,
+        userInfo: [NSLocalizedDescriptionKey: "\(code): \(message)"]
+      )
+    )
+  }
+
+  private static let sessionCommands: Set<String> = ["sendTurn", "itemDetail", "respondPermission"]
   func command(_ method: String, payload: String, promise: Promise) {
     guard health.ready, let view = webView, let data = payload.data(using: .utf8), data.count <= 128 * 1024,
-          let args = try? JSONSerialization.jsonObject(with: data) as? [String: Any], (method != "sendTurn" || args["sessionId"] as? String == sessionId),
-          (method == "sendTurn" || args["workspaceId"] as? String == workspace) else {
-      promise.reject("not_ready", "会话尚未同步"); return
+          let args = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          (Self.sessionCommands.contains(method)
+            ? args["sessionId"] as? String == sessionId
+            : args["workspaceId"] as? String == workspace) else {
+      fail(promise, "not_ready", "会话尚未同步"); return
     }
     let id = UUID(); commands[id] = promise
     DispatchQueue.main.asyncAfter(deadline: .now() + 45) { [weak self] in
-      self?.commands.removeValue(forKey: id)?.reject("send_timeout", "发送结果未知，请查看同步记录，不要重复发送")
+      self?.commands.removeValue(forKey: id).map { self?.fail($0, "send_timeout", "发送结果未知，请查看同步记录，不要重复发送") }
     }
-    view.callAsyncJavaScript("return JSON.stringify(await globalThis.dataRuntime[method](args))", arguments: ["args": args, "method": method], in: nil, in: .page) { [weak self, weak view] result in
+    // A JS throw reaches Swift as a WKError with no usable message, so the
+    // runtime reports failures as a value instead of an exception.
+    let script = """
+    try { return JSON.stringify(await globalThis.dataRuntime[method](args)) }
+    catch (error) {
+      const detail = {
+        type: typeof error,
+        name: error && error.name,
+        message: error && error.message,
+        stack: error && error.stack,
+        text: String(error),
+        keys: error && typeof error === "object" ? Object.getOwnPropertyNames(error) : [],
+      }
+      return JSON.stringify({ __commandError: JSON.stringify(detail) })
+    }
+    """
+    view.callAsyncJavaScript(script, arguments: ["args": args, "method": method], in: nil, in: .page) { [weak self, weak view] result in
       guard let self, let view, self.webView === view, let pending = self.commands.removeValue(forKey: id) else { return }
-      switch result { case .success(let value): pending.resolve(value); case .failure(let error): pending.reject("send_failed", error.localizedDescription) }
+      switch result {
+      case .success(let value):
+        if let text = value as? String, text.contains("__commandError"),
+           let data = text.data(using: .utf8),
+           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let message = object["__commandError"] as? String {
+          fail(pending, "command_failed", message)
+          return
+        }
+        pending.resolve(value)
+      case .failure(let error):
+        // WKWebView puts the JS exception text in userInfo; localizedDescription
+        // alone reports "undefined reason" and hides every runtime failure.
+        let info = (error as NSError).userInfo
+        let detail = [
+          info["WKJavaScriptExceptionMessage"] as? String,
+          info[NSLocalizedDescriptionKey] as? String,
+        ].compactMap { $0 }.first ?? error.localizedDescription
+        fail(pending, "send_failed", detail)
+      }
     }
   }
   private func fetchGrant(view: WKWebView) {

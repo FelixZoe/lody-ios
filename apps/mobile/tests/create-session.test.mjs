@@ -177,7 +177,7 @@ test('create a project session, open its empty history and dispatch the first tu
       remote.set(['m', `session-${id}`, 'latestUserMsgId'], turnId);
     },
   );
-  assert.equal((await ready).messages.length, 0);
+  assert.equal((await ready).entries.length, 0);
   const sent = await runtime.sendTurn({
     sessionId: result.session.id,
     machineId: 'm1',

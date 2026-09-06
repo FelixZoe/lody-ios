@@ -1,6 +1,8 @@
 export {
   runtimeInfo,
   selectionFeedback,
+  showToast,
+  type ToastKind,
   addAppActiveListener,
   type RuntimeInfo,
 } from './runtime/LodyKit';
@@ -33,8 +35,11 @@ export {
   watchSession,
   unwatchSession,
   sendSessionTurn,
+  sessionItemDetail,
+  respondSessionPermission,
   sessionCreationOptions,
   createSession,
+  localProjects,
 } from './runtime/LodyKit';
 
 export {
@@ -53,7 +58,12 @@ export {
   type NativePressableProps,
 } from './press/NativePressable';
 
-export { initialInboxView, saveInboxView } from './runtime/LodyKit';
+export {
+  initialInboxView,
+  saveInboxView,
+  readInboxExpansion,
+  saveInboxExpansion,
+} from './runtime/LodyKit';
 
 export {
   readLocalValue,
@@ -64,3 +74,15 @@ export {
 export { readLocalStartup } from './runtime/LodyKit';
 
 export { NativeSearchBar } from './chrome/NativeSearchBar';
+
+export {
+  NativeTitleMenu,
+  type NativeTitleMenuItem,
+  type NativeTitleMenuProps,
+} from './chrome/NativeTitleMenu';
+
+export {
+  NativeContextMenu,
+  type NativeContextMenuAction,
+  type NativeContextMenuProps,
+} from './menu/NativeContextMenu';

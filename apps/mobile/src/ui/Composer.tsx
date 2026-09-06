@@ -12,6 +12,7 @@ export function Composer({
   sending = false,
   submitDisabled = false,
   testID,
+  inputAccessoryViewID,
 }: {
   placeholder: string;
   value: string;
@@ -21,6 +22,7 @@ export function Composer({
   sending?: boolean;
   submitDisabled?: boolean;
   testID?: string;
+  inputAccessoryViewID?: string;
 }) {
   const colors = usePalette();
   const canSend =
@@ -42,6 +44,7 @@ export function Composer({
     >
       <TextInput
         testID={testID}
+        inputAccessoryViewID={inputAccessoryViewID}
         accessibilityLabel={placeholder}
         placeholder={placeholder}
         placeholderTextColor={colors.tertiaryLabel}

@@ -11,6 +11,7 @@ export function Button({
   onPress,
   variant = 'plain',
   disabled = false,
+  destructive = false,
   testID,
   style,
 }: {
@@ -19,6 +20,7 @@ export function Button({
   onPress: () => void;
   variant?: ButtonVariant;
   disabled?: boolean;
+  destructive?: boolean;
   testID?: string;
   style?: StyleProp<ViewStyle>;
 }) {
@@ -48,7 +50,11 @@ export function Button({
       <AppText
         variant="body"
         style={{
-          color: filled ? colors.onAccent : colors.accent,
+          color: filled
+            ? colors.onAccent
+            : destructive
+              ? colors.danger
+              : colors.accent,
           fontWeight: filled ? '600' : '400',
         }}
       >

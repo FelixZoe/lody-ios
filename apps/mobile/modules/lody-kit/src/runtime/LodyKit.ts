@@ -33,11 +33,16 @@ declare class LodyKitNativeModule extends NativeModule<Events> {
   readonly runtimeInfo: RuntimeInfo;
   readonly initialInboxView: number;
   saveInboxView(index: number): void;
+  readInboxExpansion(): Record<string, boolean>;
+  saveInboxExpansion(projectId: string, expanded: boolean): void;
   watchSession(id: string): Promise<void>;
   unwatchSession(id: string): Promise<void>;
   sessionCreationOptions(payload: string): Promise<string>;
+  localProjects(payload: string): Promise<string>;
   createSession(payload: string): Promise<string>;
   sendSessionTurn(payload: string): Promise<string>;
+  sessionItemDetail(payload: string): Promise<string>;
+  respondSessionPermission(payload: string): Promise<string>;
   watchCatalog(workspace: string, owner: string): Promise<void>;
   unwatchCatalog(owner: string): Promise<void>;
   dataRuntimeStatus(): Promise<DataRuntimeEvent>;
@@ -45,6 +50,7 @@ declare class LodyKitNativeModule extends NativeModule<Events> {
   debugProbeSchema(): Promise<string>;
   debugRestartDataRuntime(): Promise<void>;
   selectionFeedback(): Promise<void>;
+  showToast(message: string, kind: string): void;
   readAuthToken(): Promise<string | null>;
   saveAuthToken(token: string): Promise<void>;
   clearAuthToken(): Promise<void>;
@@ -60,6 +66,13 @@ const native = requireNativeModule<LodyKitNativeModule>('LodyKit');
 export const runtimeInfo = native.runtimeInfo;
 export function selectionFeedback(): Promise<void> {
   return native.selectionFeedback();
+}
+
+export type ToastKind = 'info' | 'warning' | 'error';
+
+/** Rendered by a dedicated UIWindow above sheets, so it is never occluded. */
+export function showToast(message: string, kind: ToastKind = 'error'): void {
+  native.showToast(message, kind);
 }
 export function addAppActiveListener(listener: () => void) {
   return native.addListener('onAppActive', listener);
@@ -91,6 +104,10 @@ export const watchSession = (id: string) => native.watchSession(id);
 export const unwatchSession = (id: string) => native.unwatchSession(id);
 export const sendSessionTurn = (payload: string) =>
   native.sendSessionTurn(payload);
+export const sessionItemDetail = (payload: string) =>
+  native.sessionItemDetail(payload);
+export const respondSessionPermission = (payload: string) =>
+  native.respondSessionPermission(payload);
 
 export const sessionCreationOptions = (payload: string) =>
   native.sessionCreationOptions(payload);
@@ -98,6 +115,9 @@ export const createSession = (payload: string) => native.createSession(payload);
 
 export const initialInboxView = native.initialInboxView === 1 ? 1 : 0;
 export const saveInboxView = (index: number) => native.saveInboxView(index);
+export const readInboxExpansion = () => native.readInboxExpansion();
+export const saveInboxExpansion = (projectId: string, expanded: boolean) =>
+  native.saveInboxExpansion(projectId, expanded);
 
 export const readLocalValue = (key: string) => native.readLocalValue(key);
 export const writeLocalValue = (key: string, value: string) =>
@@ -105,3 +125,5 @@ export const writeLocalValue = (key: string, value: string) =>
 export const clearLocalValues = () => native.clearLocalValues();
 
 export const readLocalStartup = () => native.readLocalStartup();
+
+export const localProjects = (payload: string) => native.localProjects(payload);
