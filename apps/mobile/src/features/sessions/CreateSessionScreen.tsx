@@ -1,3 +1,4 @@
+import { projectPickerPage } from './ProjectPickerScreen';
 import { useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, TextInput, View } from 'react-native';
 import {
@@ -9,6 +10,7 @@ import {
 import { definePage, usePageRuntime } from '@/presentation';
 import { useAuth } from '@/features/auth/AuthProvider';
 import type { CreationOptions, Project, Session } from '@/cloud/model';
+import { capabilityFor } from '@/cloud/model';
 import { usePalette } from '@/theme/palette';
 import { type as typeScale } from '@/theme/tokens';
 import { AppText } from '@/ui/AppText';
@@ -16,6 +18,7 @@ import { Composer } from '@/ui/Composer';
 import { showToast } from '@/ui/toast';
 import { draftTitle } from './draftTitle';
 import { pickerPage } from './PickerScreen';
+import { type ModelChoice, modelPage, modelSummary } from './ModelScreen';
 
 type Params = {
   workspaceId: string;
@@ -25,19 +28,27 @@ type Params = {
 
 /** Unassigned projects carry no working directory, so no session can start there. */
 const creatable = (project: Project) => !project.id.endsWith(':unassigned');
-export type CreatedSession = { session: Session; draft: string };
+export type CreatedSession = {
+  session: Session;
+  draft: string;
+  modelId?: string;
+  modeId?: string;
+};
 
 function CreateSessionScreen() {
   const { params, finish, push } = usePageRuntime<Params, CreatedSession>();
   const { account } = useAuth();
   const colors = usePalette();
-  const projects = params.projects.filter(creatable);
+  const [projects, setProjects] = useState(() =>
+    params.projects.filter(creatable),
+  );
   const [projectId, setProjectId] = useState(
     params.projectId ?? projects[0]?.id ?? '',
   );
   const [options, setOptions] = useState<CreationOptions>();
   const [machineId, setMachineId] = useState('');
   const [agentKey, setAgentKey] = useState('');
+  const [choice, setChoice] = useState<ModelChoice>({});
   const [branch, setBranch] = useState('');
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(true);
@@ -67,8 +78,13 @@ function CreateSessionScreen() {
         const first = value.agents[0];
         setAgentKey(first ? `${first.machineId}:${first.id}` : '');
       })
-      .catch(() => {
-        if (active) showToast('暂时无法读取电脑配置，请确认连接后重试。');
+      .catch((error: unknown) => {
+        if (!active) return;
+        showToast(
+          __DEV__
+            ? `读取电脑配置失败：${String(error)}`
+            : '暂时无法读取电脑配置，请确认连接后重试。',
+        );
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -93,6 +109,7 @@ function CreateSessionScreen() {
     (a) => a.machineId === machine?.id,
   );
   const agent = agents.find((a) => `${a.machineId}:${a.id}` === agentKey);
+  const capability = capabilityFor(options, agent);
 
   async function submit() {
     const ready =
@@ -120,7 +137,12 @@ function CreateSessionScreen() {
         ),
       );
       if (result.state === 'created') {
-        finish({ session: result.session, draft });
+        finish({
+          session: result.session,
+          draft,
+          modelId: choice.modelId,
+          modeId: choice.modeId,
+        });
         return;
       }
       if (result.state === 'rejected') {
@@ -193,32 +215,31 @@ function CreateSessionScreen() {
         },
         {
           id: 'model',
-          title: '默认模型',
-          subtitle: '由助手配置决定',
+          title: capability ? modelSummary(capability, choice) : '默认模型',
+          subtitle: '模型',
           image: 'cpu',
+          action: !!capability,
+          disclosure: !!capability,
+          navigates: !!capability,
         },
       ],
     },
   ];
 
   async function pickProject() {
-    const result = await push(
-      pickerPage,
-      {
-        title: '选择项目',
-        header: '项目',
-        selectedId: projectId,
-        placeholder: '还没有项目，先在电脑上打开一个。',
-        options: projects.map((p) => ({
-          id: p.id,
-          title: p.name,
-          subtitle: p.rootPath || '云端项目',
-          subtitleMono: !!p.rootPath,
-        })),
-      },
-      { title: '选择项目' },
-    );
-    if (result.status === 'completed') setProjectId(result.value);
+    const result = await push(projectPickerPage, {
+      workspaceId: params.workspaceId,
+      projects,
+      selectedId: projectId,
+    });
+    if (result.status !== 'completed') return;
+    const picked = result.value;
+    setProjects((current) => [
+      ...current.filter((p) => p.id !== picked.id),
+      picked,
+    ]);
+    setProjectId(picked.id);
+    setChoice({});
   }
 
   async function pickMachine() {
@@ -241,6 +262,16 @@ function CreateSessionScreen() {
     setMachineId(result.value);
     const first = options.agents.find((a) => a.machineId === result.value);
     setAgentKey(first ? `${first.machineId}:${first.id}` : '');
+    setChoice({});
+  }
+
+  async function pickModel() {
+    if (!capability) return;
+    await push(
+      modelPage,
+      { capability, value: choice, onChange: setChoice },
+      { title: agent?.name ?? '模型' },
+    );
   }
 
   async function pickAgent() {
@@ -263,7 +294,9 @@ function CreateSessionScreen() {
       },
       { title: '选择助手' },
     );
-    if (result.status === 'completed') setAgentKey(result.value);
+    if (result.status !== 'completed') return;
+    setAgentKey(result.value);
+    setChoice({});
   }
 
   const form = (
@@ -278,6 +311,7 @@ function CreateSessionScreen() {
           if (sending || uncertain) return;
           if (nativeEvent.id === 'project') void pickProject();
           if (nativeEvent.id === 'machine') void pickMachine();
+          if (nativeEvent.id === 'model') void pickModel();
           if (nativeEvent.id === 'agent') void pickAgent();
         }}
       />

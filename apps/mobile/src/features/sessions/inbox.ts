@@ -93,6 +93,7 @@ export function sessionRow(session: Session, accent: string, projectName = '') {
 export function projectSections(
   catalog: Catalog,
   accent: string,
+  expanded: Record<string, boolean> = {},
 ): NativeListSection[] {
   return catalog.projects.map((project) => {
     const sessions = catalog.sessions
@@ -102,20 +103,40 @@ export function projectSections(
       id: project.id,
       header: project.name,
       headerValue: String(sessions.length),
-      headerActionId: `project:${project.id}`,
-      footer: sessions.length ? undefined : '暂无会话',
-      rows: sessions.slice(0, 3).map((session) => {
-        const state = sessionState(session.status);
-        return {
-          ...sessionRow(session, accent),
-          subtitle: stateLabel[state],
-          value: relativeTime(session.createdAt),
-          image: ['attention', 'failed'].includes(state)
-            ? stateSymbol[state]
-            : undefined,
-          disclosure: false,
-        };
-      }),
+      headerActionId: `toggle:${project.id}`,
+      headerExpanded: expanded[project.id] ?? true,
+      footer:
+        (expanded[project.id] ?? true) && !sessions.length
+          ? '暂无会话'
+          : undefined,
+      rows:
+        expanded[project.id] === false
+          ? []
+          : [
+              ...sessions.slice(0, 5).map((session) => {
+                const state = sessionState(session.status);
+                return {
+                  ...sessionRow(session, accent),
+                  subtitle: stateLabel[state],
+                  value: relativeTime(session.createdAt),
+                  image: ['attention', 'failed'].includes(state)
+                    ? stateSymbol[state]
+                    : undefined,
+                  disclosure: false,
+                };
+              }),
+              ...(sessions.length > 5
+                ? [
+                    {
+                      id: `project:${project.id}`,
+                      title: '更多',
+                      action: true,
+                      disclosure: true,
+                      navigates: true,
+                    },
+                  ]
+                : []),
+            ],
     };
   });
 }

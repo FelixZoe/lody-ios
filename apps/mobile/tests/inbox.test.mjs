@@ -127,35 +127,40 @@ test('the session title comes from the first line of the first message', () => {
   assert.equal(draftTitle('\n\n真正的第一行'), '真正的第一行');
 });
 
-test('project previews show three newest non-archived sessions and keep empty projects reachable', async () => {
+test('projects default to expanded, honor saved collapse, and show More only beyond five sessions', async () => {
   const { projectSections } = await import('../src/features/sessions/inbox.ts');
-  const data = catalog(
-    [
-      ...Array.from({ length: 5 }, (_, i) =>
+  for (const count of [0, 5, 6]) {
+    const data = catalog([
+      ...Array.from({ length: count }, (_, i) =>
         session(`s${i}`, 'completed', {
           createdAt: `2026-09-0${i + 1}T10:00:00Z`,
         }),
       ),
-      session('archived', 'completed', {
-        archived: true,
-        createdAt: '2026-09-06T10:00:00Z',
-      }),
-    ],
-    [
-      { id: 'p1', name: 'Lody' },
-      { id: 'p2', name: 'Empty' },
-    ],
-  );
-  const [group, empty] = projectSections(data, ACCENT);
-  assert.deepEqual(
-    group.rows.map((row) => row.id),
-    ['s4', 's3', 's2'],
-  );
-  assert.equal(group.headerValue, '5');
-  assert.equal(group.headerActionId, 'project:p1');
-  assert.equal(empty.rows.length, 0);
-  assert.equal(empty.headerActionId, 'project:p2');
-  assert.equal(empty.footer, '暂无会话');
+      session('archived', 'completed', { archived: true }),
+    ]);
+    assert.equal(projectSections(data, ACCENT)[0].headerExpanded, true);
+    assert.equal(
+      projectSections(data, ACCENT)[0].rows.length,
+      Math.min(count, 5) + (count > 5 ? 1 : 0),
+    );
+    const [group] = projectSections(data, ACCENT, { p1: true });
+    assert.equal(group.headerExpanded, true);
+    assert.equal(group.headerActionId, 'toggle:p1');
+    assert.equal(
+      group.rows.some((row) => row.title === '更多'),
+      count > 5,
+    );
+    assert.deepEqual(
+      group.rows.filter((row) => row.id !== 'project:p1').map((row) => row.id),
+      Array.from({ length: Math.min(count, 5) }, (_, i) => `s${count - i - 1}`),
+    );
+    if (count > 5) assert.equal(group.rows.at(-1).id, 'project:p1');
+    if (!count) assert.equal(group.footer, '暂无会话');
+    assert.equal(
+      projectSections(data, ACCENT, { p1: false })[0].rows.length,
+      0,
+    );
+  }
 });
 
 test('search finds empty projects and archived sessions without the inbox limit', async () => {

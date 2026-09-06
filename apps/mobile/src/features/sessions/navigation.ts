@@ -26,7 +26,12 @@ export async function newSession(
     if (result.status === 'completed')
       await present(
         sessionPage,
-        { session: result.value.session, initialDraft: result.value.draft },
+        {
+          session: result.value.session,
+          initialDraft: result.value.draft,
+          modelId: result.value.modelId,
+          modeId: result.value.modeId,
+        },
         { title: result.value.session.title },
       );
   } catch {

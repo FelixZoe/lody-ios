@@ -23,6 +23,7 @@ export type NativeListSection = {
   header?: string;
   headerValue?: string;
   headerActionId?: string;
+  headerExpanded?: boolean;
   footer?: string;
   rows: NativeListRow[];
 };
@@ -37,7 +38,7 @@ export const NativeGroupedList: ComponentType<
     accent?: string;
     /** Drop the list's own background so a sheet's material shows through. */
     transparent?: boolean;
-    /** Unboxed content sections with tappable project headings. */
+    /** Project sections with tappable headings and compact session details. */
     contentStyle?: boolean;
     placeholder?: string;
     refreshing?: boolean;

@@ -3,8 +3,11 @@ import { Stack } from 'expo-router';
 import { useMemo, useState } from 'react';
 import {
   NativeGroupedList,
+  NativeTitleMenu,
   initialInboxView,
   saveInboxView,
+  readInboxExpansion,
+  saveInboxExpansion,
 } from '@lody-ios/kit';
 import { Screen } from '@/ui/Screen';
 import { useAuth } from '@/features/auth/AuthProvider';
@@ -23,12 +26,13 @@ export default function InboxScreen() {
   const { catalog, selected, setWorkspaceId, loading, connected, refresh } =
     useCatalog();
   const [mode, setMode] = useState(initialInboxView);
+  const [expanded, setExpanded] = useState(readInboxExpansion);
   const sections = useMemo(
     () =>
       mode === 0
-        ? projectSections(catalog, colors.accent)
+        ? projectSections(catalog, colors.accent, expanded)
         : inboxSections(catalog, { accent: colors.accent }),
-    [mode, catalog, colors.accent],
+    [mode, catalog, colors.accent, expanded],
   );
   if (!localReady) return <Screen />;
   if (!account)
@@ -39,28 +43,19 @@ export default function InboxScreen() {
     );
   return (
     <>
-      <Stack.Screen
-        options={{ title: selected?.name ?? '会话', headerTitle: '' }}
-      />
-      <Stack.Toolbar placement="left">
-        <Stack.Toolbar.Menu
-          accessibilityLabel={`切换工作区，${selected?.name ?? '工作区'}`}
-          tintColor={colors.label}
-          hidesSharedBackground
-          style={{ fontSize: 17, fontWeight: '600' }}
-        >
-          <Stack.Toolbar.Label>{`${selected?.name ?? '工作区'} ▾`}</Stack.Toolbar.Label>
-          {account.workspaces.map((workspace) => (
-            <Stack.Toolbar.MenuAction
-              key={workspace.id}
-              isOn={workspace.id === selected?.id}
-              onPress={() => setWorkspaceId(workspace.id)}
-            >
-              {workspace.name}
-            </Stack.Toolbar.MenuAction>
-          ))}
-        </Stack.Toolbar.Menu>
-      </Stack.Toolbar>
+      <Stack.Screen options={{ title: selected?.name ?? '会话' }} />
+      <Stack.Title asChild>
+        <NativeTitleMenu
+          accessibilityName={`切换工作区，${selected?.name ?? '工作区'}`}
+          label={selected?.name ?? '工作区'}
+          items={account.workspaces.map((workspace) => ({
+            id: workspace.id,
+            title: workspace.name,
+            selected: workspace.id === selected?.id,
+          }))}
+          onSelect={setWorkspaceId}
+        />
+      </Stack.Title>
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button
           accessibilityLabel="首页设置"
@@ -95,7 +90,14 @@ export default function InboxScreen() {
         placeholder={listPlaceholder({ loading, connected })}
         onRefresh={refresh}
         contentStyle={mode === 0}
-        onRowPress={({ nativeEvent: { id } }) => openCatalogRow(id, catalog)}
+        onRowPress={({ nativeEvent: { id } }) => {
+          if (id.startsWith('toggle:')) {
+            const projectId = id.slice(7);
+            const next = !(expanded[projectId] ?? true);
+            saveInboxExpansion(projectId, next);
+            setExpanded((previous) => ({ ...previous, [projectId]: next }));
+          } else openCatalogRow(id, catalog);
+        }}
       />
     </>
   );
@@ -160,7 +162,7 @@ const inboxSettingsPage = definePage<{ mode: number }, number>({
   },
   presentation: {
     style: 'formSheet',
-    headerVariant:'transparent',
+    headerVariant: 'transparent',
     sheetAllowedDetents: [0.5, 1],
     sheetGrabberVisible: true,
   },

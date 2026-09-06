@@ -1,6 +1,11 @@
 import { Flock } from '@loro-dev/flock-wasm/base64';
 import type { StreamsClient } from '@loro-dev/streams-client';
-import type { CreationOptions, Session } from '../../../src/cloud/model';
+import type {
+  Capability,
+  CapabilityChoice,
+  CreationOptions,
+  Session,
+} from '../../../src/cloud/model';
 import { projectRows } from '../../../src/cloud/model';
 import { encodeFrame } from '../decoder/frames';
 import { clientFor } from './session';
@@ -37,12 +42,68 @@ export function creationOptions(
     )
       throw new Error('project_unavailable');
   }
+  const capabilities = new Map<string, Capability & { fetchedAt: number }>();
+  const choices = (
+    value: unknown,
+    idKey: 'id' | 'modelId',
+  ): CapabilityChoice[] =>
+    Array.isArray(value)
+      ? value.flatMap((item) => {
+          const entry = item as Record<string, unknown>;
+          const id = entry?.[idKey];
+          const name = entry?.name;
+          return typeof id === 'string' && id && typeof name === 'string'
+            ? [
+                {
+                  id,
+                  name,
+                  ...(typeof entry.description === 'string'
+                    ? { description: entry.description }
+                    : {}),
+                },
+              ]
+            : [];
+        })
+      : [];
+
   const agents: CreationOptions['agents'] = [];
   for (const [machineId, flock] of machines) {
     if (!projectId.startsWith('github:') && machineId !== project.machineId)
       continue;
     for (const row of flock.scan()) {
       const value = row.value as Record<string, unknown> | undefined;
+      if (row.key[0] === 'acpCapability' && value) {
+        const cliType = String(value.cliType);
+        const agentType = String(value.agentType);
+        if (!agentType || !cliType) continue;
+        const key = `${machineId}:${cliType}:${agentType}`;
+        // The same agent can publish more than one capability row; the most
+        // recently fetched one describes what the machine will actually accept.
+        const fetchedAt = Number(value.fetchedAt) || 0;
+        if ((capabilities.get(key)?.fetchedAt ?? -1) >= fetchedAt) continue;
+        const efforts = value.modelReasoningEfforts;
+        capabilities.set(key, {
+          machineId,
+          cliType,
+          agentType,
+          models: choices(value.models, 'modelId'),
+          modes: choices(value.modes, 'id'),
+          reasoningEfforts: Object.fromEntries(
+            Object.entries(
+              (efforts && typeof efforts === 'object' ? efforts : {}) as Record<
+                string,
+                unknown
+              >,
+            ).flatMap(([modelId, levels]) =>
+              Array.isArray(levels)
+                ? [[modelId, levels.filter((l) => typeof l === 'string')]]
+                : [],
+            ),
+          ),
+          fetchedAt,
+        });
+        continue;
+      }
       if (
         row.key[0] !== 'agentConfig' ||
         !value ||
@@ -77,7 +138,14 @@ export function creationOptions(
       });
     }
   }
-  return { sessionId: crypto.randomUUID(), project, agents };
+  return {
+    sessionId: crypto.randomUUID(),
+    project,
+    agents,
+    capabilities: [...capabilities.values()].map(
+      ({ fetchedAt: _fetchedAt, ...capability }) => capability,
+    ),
+  };
 }
 
 const attempted = new Set<string>();

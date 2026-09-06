@@ -1,4 +1,12 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import {
+  createContext,
+  use,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { StyleSheet } from 'react-native';
 import type { ScreenStackHeaderConfigProps } from 'react-native-screens';
 import {
@@ -18,6 +26,18 @@ import type {
 import { PageRuntimeProvider } from './page';
 import type { PresentationResult } from './presentationStore';
 import { present, type PresentationSession } from './presentationStore';
+
+type HeaderItems = ScreenStackHeaderConfigProps['headerRightBarButtonItems'];
+const SheetHeader = createContext<((items: HeaderItems) => void) | null>(null);
+
+/** Set actual UINavigationItem buttons on the owning sheet level. */
+export function useSheetHeader(items: HeaderItems) {
+  const setItems = use(SheetHeader);
+  useEffect(() => {
+    setItems?.(items);
+    return () => setItems?.(undefined);
+  }, [setItems, items]);
+}
 
 type Level = {
   key: number;
@@ -59,8 +79,14 @@ export function SheetStack({
   session: PresentationSession;
   runtime: PageRuntime<unknown, unknown>;
 }) {
+  const [headerItems, setHeaderItems] = useState<HeaderItems>();
   const [levels, setLevels] = useState<readonly Level[]>([]);
   const nextKey = useRef(1);
+  const pendingLevels = useRef(levels);
+  pendingLevels.current = levels;
+  useEffect(() => () => {
+    for (const level of pendingLevels.current) level.settle({ status: 'cancelled' });
+  }, []);
 
   const drop = useCallback(
     (key: number, result: PresentationResult<unknown>) => {
@@ -68,6 +94,9 @@ export function SheetStack({
         const level = current.find((entry) => entry.key === key);
         if (!level) return current;
         level.settle(result);
+        for (const child of current) {
+          if (child.key > key) child.settle({ status: 'cancelled' });
+        }
         return current.filter((entry) => entry.key < key);
       });
     },
@@ -109,21 +138,26 @@ export function SheetStack({
       <ScreenStackItem
         screenId={`presented-${session.id}`}
         style={StyleSheet.absoluteFill}
-        headerConfig={headerConfig(
-          session.page,
-          session.presentation,
-          showClose ? (
-            <NativeCloseButton
-              label={`关闭${session.page.title}`}
-              onPress={runtime.cancel}
-              style={{ width: 30, height: 30 }}
-            />
-          ) : undefined,
-        )}
+        headerConfig={{
+          ...headerConfig(
+            session.page,
+            session.presentation,
+            showClose && !headerItems ? (
+              <NativeCloseButton
+                label={`关闭${session.page.title}`}
+                onPress={runtime.cancel}
+                style={{ width: 30, height: 30 }}
+              />
+            ) : undefined,
+          ),
+          headerRightBarButtonItems: headerItems,
+        }}
       >
-        <PageRuntimeProvider value={rootRuntime}>
-          <session.page.Component />
-        </PageRuntimeProvider>
+        <SheetHeader value={setHeaderItems}>
+          <PageRuntimeProvider value={rootRuntime}>
+            <session.page.Component />
+          </PageRuntimeProvider>
+        </SheetHeader>
       </ScreenStackItem>
       {levels.map((level) => (
         <PushedLevel key={level.key} level={level} push={push} onDrop={drop} />
@@ -141,6 +175,7 @@ function PushedLevel({
   push: PushPage;
   onDrop: (key: number, result: PresentationResult<unknown>) => void;
 }) {
+  const [headerItems, setHeaderItems] = useState<HeaderItems>();
   const cancel = useCallback(
     () => onDrop(level.key, { status: 'cancelled' }),
     [level.key, onDrop],
@@ -166,13 +201,18 @@ function PushedLevel({
       screenId={`presented-level-${level.key}`}
       stackPresentation="push"
       style={StyleSheet.absoluteFill}
-      headerConfig={headerConfig(level.page, level.presentation)}
+      headerConfig={{
+        ...headerConfig(level.page, level.presentation),
+        headerRightBarButtonItems: headerItems,
+      }}
       gestureEnabled={level.presentation.dismissible}
       onDismissed={cancel}
     >
-      <PageRuntimeProvider value={runtime}>
-        <level.page.Component />
-      </PageRuntimeProvider>
+      <SheetHeader value={setHeaderItems}>
+        <PageRuntimeProvider value={runtime}>
+          <level.page.Component />
+        </PageRuntimeProvider>
+      </SheetHeader>
     </ScreenStackItem>
   );
 }

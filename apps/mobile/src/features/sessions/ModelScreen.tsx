@@ -1,0 +1,131 @@
+import { useState } from 'react';
+import { NativeGroupedList, type NativeListSection } from '@lody-ios/kit';
+import { definePage, usePageRuntime } from '@/presentation';
+import { usePalette } from '@/theme/palette';
+import type { Capability } from '@/cloud/model';
+
+export type ModelChoice = {
+  modelId?: string;
+  effort?: string;
+  modeId?: string;
+};
+
+type Params = {
+  capability: Capability;
+  value: ModelChoice;
+  /** Params live in memory, so the screen reports every pick as it happens. */
+  onChange: (next: ModelChoice) => void;
+};
+
+const DEFAULT = 'lody:default';
+
+export function modelSummary(capability: Capability, value: ModelChoice) {
+  const model = capability.models.find((m) => m.id === value.modelId);
+  const mode = capability.modes.find((m) => m.id === value.modeId);
+  return [model?.name ?? '默认模型', value.effort, mode?.name]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+function ModelScreen() {
+  const { params } = usePageRuntime<Params>();
+  const colors = usePalette();
+  const [value, setValue] = useState(params.value);
+  const { capability } = params;
+  const efforts = value.modelId
+    ? (capability.reasoningEfforts[value.modelId] ?? [])
+    : [];
+
+  const tabs = [
+    { id: 'model', title: '模型' },
+    ...(efforts.length ? [{ id: 'effort', title: '强度' }] : []),
+    ...(capability.modes.length ? [{ id: 'mode', title: '模式' }] : []),
+  ];
+  const [tab, setTab] = useState(0);
+  const active = tabs[Math.min(tab, tabs.length - 1)]!.id;
+
+  function apply(next: ModelChoice) {
+    setValue(next);
+    params.onChange(next);
+  }
+
+  const rows =
+    active === 'model'
+      ? [
+          { id: DEFAULT, title: '使用助手默认', selected: !value.modelId },
+          ...capability.models.map((model) => ({
+            id: model.id,
+            title: model.name,
+            subtitle: model.description,
+            selected: model.id === value.modelId,
+          })),
+        ]
+      : active === 'effort'
+        ? [
+            { id: DEFAULT, title: '使用助手默认', selected: !value.effort },
+            ...efforts.map((effort) => ({
+              id: effort,
+              title: effort,
+              selected: effort === value.effort,
+            })),
+          ]
+        : [
+            { id: DEFAULT, title: '使用助手默认', selected: !value.modeId },
+            ...capability.modes.map((mode) => ({
+              id: mode.id,
+              title: mode.name,
+              subtitle: mode.description,
+              selected: mode.id === value.modeId,
+            })),
+          ];
+
+  const sections: NativeListSection[] = [
+    {
+      id: active,
+      footer:
+        active === 'effort'
+          ? '推理强度只对支持它的模型生效。'
+          : active === 'mode'
+            ? '模式决定助手能不能直接改文件和执行命令。'
+            : '换模型会重置为该模型支持的推理强度。',
+      rows: rows.map((row) => ({
+        id: row.id,
+        title: row.title,
+        subtitle: 'subtitle' in row ? row.subtitle : undefined,
+        image: row.selected ? 'checkmark' : undefined,
+        action: true,
+      })),
+    },
+  ];
+
+  return (
+    <NativeGroupedList
+      style={{ flex: 1 }}
+      accent={colors.accent}
+      transparent
+      sections={sections}
+      segments={tabs.map((entry) => entry.title)}
+      selectedSegment={Math.min(tab, tabs.length - 1)}
+      onSegmentChange={({ nativeEvent }) => setTab(nativeEvent.index)}
+      placeholder=""
+      onRowPress={({ nativeEvent }) => {
+        const picked = nativeEvent.id === DEFAULT ? undefined : nativeEvent.id;
+        if (active === 'model')
+          // Efforts are model-specific, so a stale one must not survive.
+          apply({ ...value, modelId: picked, effort: undefined });
+        else if (active === 'effort') apply({ ...value, effort: picked });
+        else apply({ ...value, modeId: picked });
+      }}
+    />
+  );
+}
+
+export const modelPage = definePage<Params>({
+  id: 'model',
+  title: '模型',
+  Component: ModelScreen,
+  parseRouteParams: () => {
+    throw new Error('请从新建会话打开');
+  },
+  presentation: { style: 'push', headerVariant: 'transparent' },
+});

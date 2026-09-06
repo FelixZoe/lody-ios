@@ -20,6 +20,7 @@ struct LodyListSection: Record {
   @Field var header: String = ""
   @Field var headerValue: String = ""
   @Field var headerActionId: String = ""
+  @Field var headerExpanded: Bool? = nil
   @Field var footer: String = ""
   @Field var rows: [LodyListRow] = []
 }
@@ -32,6 +33,11 @@ private final class ListAppearanceController: UIViewController {
   }
 }
 
+private final class SectionSupplementaryCell: UICollectionViewListCell {
+  let arrow = UIImageView(image: UIImage(systemName: "chevron.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)))
+  var expanded: Bool?
+}
+
 private final class SectionHeaderTap: UITapGestureRecognizer {}
 
 private struct ListItemID: Hashable {
@@ -39,11 +45,13 @@ private struct ListItemID: Hashable {
   let row: String
 }
 
-final class LodyGroupedList: ExpoView, UICollectionViewDelegate {
+final class LodyGroupedList: ExpoView, UICollectionViewDelegate, UISearchBarDelegate {
   let onRowPress = EventDispatcher()
   let onRefresh = EventDispatcher()
   let onSegmentChange = EventDispatcher()
   private let segments = UISegmentedControl(items: [])
+  private var scopeSearch: UISearchController?
+  private var segmentLabels: [String] = []
   private var selectedSegment = 0
   private let appearance = ListAppearanceController()
   private weak var scrollOwner: UIViewController?
@@ -103,11 +111,11 @@ final class LodyGroupedList: ExpoView, UICollectionViewDelegate {
     cell.accessibilityTraits = row.action ? .button : .staticText
   }
 
-  private let headerRegistration = UICollectionView.SupplementaryRegistration<UICollectionViewListCell>(
+  private let headerRegistration = UICollectionView.SupplementaryRegistration<SectionSupplementaryCell>(
     elementKind: UICollectionView.elementKindSectionHeader
   ) { _, _, _ in }
 
-  private let footerRegistration = UICollectionView.SupplementaryRegistration<UICollectionViewListCell>(
+  private let footerRegistration = UICollectionView.SupplementaryRegistration<SectionSupplementaryCell>(
     elementKind: UICollectionView.elementKindSectionFooter
   ) { _, _, _ in }
 
@@ -143,9 +151,7 @@ final class LodyGroupedList: ExpoView, UICollectionViewDelegate {
     placeholder.isHidden = true
     addSubview(collection)
     addSubview(placeholder)
-    segments.isHidden = true
     segments.addTarget(self, action: #selector(segmentChanged), for: .valueChanged)
-    addSubview(segments)
     appearance.view = UIView(frame: .zero)
     appearance.view.isUserInteractionEnabled = false
     appearance.onWillAppear = { [weak self] animated, coordinator in
@@ -157,7 +163,6 @@ final class LodyGroupedList: ExpoView, UICollectionViewDelegate {
     super.layoutSubviews()
     collection.frame = bounds
     let insets = collection.adjustedContentInset
-    segments.frame = CGRect(x: 20, y: insets.top - collection.contentInset.top + 8, width: max(0, bounds.width - 40), height: 44)
     placeholder.frame = bounds.inset(by: UIEdgeInsets(top: insets.top + 24, left: 32, bottom: insets.bottom + 24, right: 32))
     attachScrollOwner()
   }
@@ -174,6 +179,7 @@ final class LodyGroupedList: ExpoView, UICollectionViewDelegate {
   override func didMoveToWindow() {
     super.didMoveToWindow()
     if window == nil {
+      detachSegments()
       if scrollOwner?.contentScrollView(for: .top) === collection {
         scrollOwner?.setContentScrollView(nil, for: .top)
         scrollOwner?.setContentScrollView(nil, for: .bottom)
@@ -192,6 +198,7 @@ final class LodyGroupedList: ExpoView, UICollectionViewDelegate {
         controller.setContentScrollView(collection, for: .top)
         controller.setContentScrollView(collection, for: .bottom)
         scrollOwner = controller
+        attachSegments(to: controller)
         if appearance.parent == nil {
           controller.addChild(appearance)
           addSubview(appearance.view)
@@ -203,11 +210,54 @@ final class LodyGroupedList: ExpoView, UICollectionViewDelegate {
     }
   }
 
+  /// The bar owns the segmented control, the way Calendar's New sheet does:
+  /// content scrolls under it and the navigation bar supplies the material and
+  /// the scroll edge effect. A floating sibling view gets neither.
+  private func attachSegments(to controller: UIViewController) {
+    guard segments.numberOfSegments > 0 else { return }
+    // No public API puts an arbitrary view in the bar's stacked palette; the
+    // only thing that rides there is a search bar. Its scope bar, however, is a
+    // real segmented control, and `.manual` activation keeps it visible without
+    // search being active — the Calendar "New" layout, with public API only.
+    let item = controller.navigationItem
+    let search = scopeSearch ?? UISearchController(searchResultsController: nil)
+    scopeSearch = search
+    search.scopeBarActivation = .manual
+    search.hidesNavigationBarDuringPresentation = false
+    search.obscuresBackgroundDuringPresentation = false
+    search.searchBar.delegate = self
+    search.searchBar.scopeButtonTitles = segmentLabels
+    search.searchBar.showsScopeBar = true
+    search.searchBar.selectedScopeButtonIndex = selectedSegment
+    // Probe: can the palette drop the text field row and keep only the scope bar?
+    search.searchBar.searchTextField.isHidden = true
+    item.preferredSearchBarPlacement = .stacked
+    item.hidesSearchBarWhenScrolling = false
+    item.searchController = search
+  }
+
+  private func detachSegments() {
+    guard let item = scrollOwner?.navigationItem else { return }
+    if item.searchController === scopeSearch { item.searchController = nil }
+    scopeSearch = nil
+  }
+
+  func searchBar(_ searchBar: UISearchBar, selectedScopeButtonIndexDidChange index: Int) {
+    guard index != selectedSegment else { return }
+    selectedSegment = index
+    onSegmentChange(["index": index])
+  }
+
   func setSegments(_ labels: [String]) {
+    segmentLabels = labels
     segments.removeAllSegments()
     for (index, label) in labels.enumerated() { segments.insertSegment(withTitle: label, at: index, animated: false) }
     segments.selectedSegmentIndex = selectedSegment
-    segments.isHidden = labels.isEmpty
+    if labels.isEmpty {
+      detachSegments()
+    } else if let controller = scrollOwner {
+      attachSegments(to: controller)
+    }
     collection.contentInset.top = labels.isEmpty ? 0 : 60
     setNeedsLayout()
   }
@@ -215,6 +265,7 @@ final class LodyGroupedList: ExpoView, UICollectionViewDelegate {
   func setSelectedSegment(_ index: Int) {
     selectedSegment = index
     segments.selectedSegmentIndex = index
+    scopeSearch?.searchBar.selectedScopeButtonIndex = index
   }
 
   @objc private func segmentChanged() {
@@ -237,17 +288,27 @@ final class LodyGroupedList: ExpoView, UICollectionViewDelegate {
     }
     let existing = Set(previous.itemIdentifiers)
     snapshot.reconfigureItems(snapshot.itemIdentifiers.filter { existing.contains($0) })
+    // Start disclosure rotation alongside the snapshot's row animation.
+    for index in collection.indexPathsForVisibleSupplementaryElements(ofKind: UICollectionView.elementKindSectionHeader) {
+      guard previous.sectionIdentifiers.indices.contains(index.section),
+            let section = value.first(where: { $0.id == previous.sectionIdentifiers[index.section] }),
+            let view = collection.supplementaryView(forElementKind: UICollectionView.elementKindSectionHeader, at: index) as? SectionSupplementaryCell else { continue }
+      configureSupplementary(view, section: section, header: true)
+    }
     dataSource.apply(snapshot, animatingDifferences: window != nil && !previous.sectionIdentifiers.isEmpty && !UIAccessibility.isReduceMotionEnabled) { [weak self] in
       guard let self else { return }
       if let selectedID, let index = self.dataSource.indexPath(for: selectedID) {
         self.collection.selectItem(at: index, animated: false, scrollPosition: [])
       }
-      for index in self.collection.indexPathsForVisibleSupplementaryElements(ofKind: UICollectionView.elementKindSectionHeader) {
-        if let view = self.collection.supplementaryView(forElementKind: UICollectionView.elementKindSectionHeader, at: index) as? UICollectionViewListCell,
-           let section = self.section(at: index.section) {
-          self.configureSupplementary(view, section: section, header: true)
+      for kind in [UICollectionView.elementKindSectionHeader, UICollectionView.elementKindSectionFooter] {
+        for index in self.collection.indexPathsForVisibleSupplementaryElements(ofKind: kind) {
+          if let view = self.collection.supplementaryView(forElementKind: kind, at: index) as? SectionSupplementaryCell,
+             let section = self.section(at: index.section) {
+            self.configureSupplementary(view, section: section, header: kind == UICollectionView.elementKindSectionHeader)
+          }
         }
       }
+      self.collection.collectionViewLayout.invalidateLayout()
     }
     updatePlaceholder()
   }
@@ -255,20 +316,6 @@ final class LodyGroupedList: ExpoView, UICollectionViewDelegate {
   func setContentStyle(_ value: Bool) {
     guard value != contentStyle else { return }
     contentStyle = value
-    var configuration = UICollectionLayoutListConfiguration(appearance: value ? .plain : .insetGrouped)
-    configuration.headerMode = .supplementary
-    configuration.footerMode = .supplementary
-    if value { configuration.backgroundColor = .clear }
-    let layout = UICollectionViewCompositionalLayout { _, environment in
-      let section = NSCollectionLayoutSection.list(using: configuration, layoutEnvironment: environment)
-      if value {
-        section.contentInsets.top = 12
-        section.contentInsets.bottom = 12
-        for item in section.boundarySupplementaryItems { item.pinToVisibleBounds = false }
-      }
-      return section
-    }
-    collection.setCollectionViewLayout(layout, animated: false)
     collection.reloadData()
   }
 
@@ -322,11 +369,7 @@ final class LodyGroupedList: ExpoView, UICollectionViewDelegate {
         content.directionalLayoutMargins = .init(top: 12, leading: 22, bottom: 12, trailing: 22)
         cell.contentConfiguration = content
       }
-      cell.configurationUpdateHandler = { cell, state in
-        var background = UIBackgroundConfiguration.listPlainCell().updated(for: state)
-        if !state.isHighlighted && !state.isSelected { background.backgroundColor = .clear }
-        cell.backgroundConfiguration = background
-      }
+      cell.backgroundConfiguration = UIBackgroundConfiguration.listGroupedCell()
     } else if transparent {
       // A static backgroundConfiguration freezes the cell's appearance, so the
       // highlighted and selected states stop rendering. The update handler
@@ -362,9 +405,11 @@ final class LodyGroupedList: ExpoView, UICollectionViewDelegate {
     return view
   }
 
-  private func configureSupplementary(_ view: UICollectionViewListCell, section: LodyListSection, header: Bool) {
+  private func configureSupplementary(_ view: SectionSupplementaryCell, section: LodyListSection, header: Bool) {
     let text = header ? section.header : section.footer
-    view.accessories = []
+    if view.accessibilityIdentifier != section.headerActionId { view.expanded = nil }
+    if !header || section.headerExpanded == nil { view.accessories = [] }
+    view.accessibilityValue = nil
     view.accessibilityIdentifier = header ? section.headerActionId : nil
     view.accessibilityTraits = header ? .header : .staticText
     view.isUserInteractionEnabled = header && !section.headerActionId.isEmpty
@@ -390,7 +435,27 @@ final class LodyGroupedList: ExpoView, UICollectionViewDelegate {
     }
     if header && !section.headerActionId.isEmpty {
       view.accessibilityTraits = [.header, .button]
-      view.accessories = [.disclosureIndicator()]
+      if let expanded = section.headerExpanded {
+        let arrow = view.arrow
+        let changed = view.expanded != expanded
+        let shouldAnimate = view.expanded != nil && changed && view.window != nil && !UIAccessibility.isReduceMotionEnabled
+        view.expanded = expanded
+        let rotation = { arrow.transform = expanded ? CGAffineTransform(rotationAngle: .pi / 2) : .identity }
+        if shouldAnimate {
+          UIView.animate(withDuration: 0.3, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut], animations: rotation)
+        } else if changed {
+          UIView.performWithoutAnimation(rotation)
+        }
+        arrow.tintColor = .secondaryLabel
+        arrow.bounds = CGRect(x: 0, y: 0, width: 16, height: 16)
+        arrow.contentMode = .center
+        if view.accessories.isEmpty {
+          view.accessories = [.customView(configuration: .init(customView: arrow, placement: .trailing()))]
+        }
+        view.accessibilityValue = expanded ? "已展开" : "已折叠"
+      } else {
+        view.accessories = [.disclosureIndicator()]
+      }
       if !(view.gestureRecognizers?.contains { $0 is SectionHeaderTap } ?? false) {
         view.addGestureRecognizer(SectionHeaderTap(target: self, action: #selector(headerPressed(_:))))
       }
