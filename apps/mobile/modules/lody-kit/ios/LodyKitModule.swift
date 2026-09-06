@@ -176,14 +176,6 @@ public final class LodyKitModule: Module {
         view.setPlaceholder(placeholder)
       }
     }
-
-
-    View(LodySearchBar.self) {
-      Events("onQueryChange", "onClose")
-      Prop("placeholder") { (view: LodySearchBar, text: String) in view.setPlaceholder(text) }
-      Prop("focused") { (view: LodySearchBar, focused: Bool) in view.setFocused(focused) }
-    }
-
     View(LodyTitleMenu.self) {
       Events("onSelect")
       Prop("label") { (view: LodyTitleMenu, label: String) in

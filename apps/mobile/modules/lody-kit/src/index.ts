@@ -76,8 +76,6 @@ export {
 
 export { readLocalStartup } from './runtime/LodyKit';
 
-export { NativeSearchBar } from './chrome/NativeSearchBar';
-
 export {
   NativeTitleMenu,
   type NativeTitleMenuItem,

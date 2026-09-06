@@ -30,15 +30,6 @@ export default function RootLayout() {
           >
             <Stack.Screen name="index" options={{ headerShown: false }} />
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen
-              name="search"
-              options={{
-                title: '',
-                headerShown: false,
-                animation: 'fade',
-                animationDuration: 180,
-              }}
-            />
             <Stack.Screen name="debug" options={{ title: 'Debug' }} />
             <Stack.Screen name="environment" options={{ title: '运行环境' }} />
             <Stack.Screen
