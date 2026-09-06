@@ -6,7 +6,6 @@ import { useColorScheme } from 'react-native';
 import { nativePresentationOptions } from '@/presentation';
 import { navigationThemes } from '@/theme/palette';
 import { softScrollEdgeEffects } from '@/ui/Screen';
-import { ToastHost } from '@/ui/ToastHost';
 
 export const unstable_settings = { initialRouteName: '(tabs)' };
 
@@ -49,7 +48,6 @@ export default function RootLayout() {
               }
             />
           </Stack>
-          <ToastHost />
         </CatalogProvider>
       </AuthProvider>
     </ThemeProvider>
