@@ -1,3 +1,8 @@
+import {
+  creationOptions,
+  createSession,
+  type CreateSessionArgs,
+} from './create-session';
 import { Flock } from '@loro-dev/flock-wasm/base64';
 import { StreamsClient } from '@loro-dev/streams-client';
 import { decompress } from 'fzstd';
@@ -48,6 +53,9 @@ const delay = (ms: number, signal: AbortSignal) =>
   });
 let metaReplica: { flock: Flock; client: StreamsClient } | undefined;
 let workspace = '';
+const machineReplicas = new Map<string, Flock>();
+let creating = false;
+
 async function markDispatch(sessionId: string, turnId: string) {
   if (!metaReplica) throw new Error('metadata_not_ready');
   const { flock, client } = metaReplica;
@@ -83,6 +91,7 @@ function publish() {
       controller.abort();
       watchers.delete(id);
       catalogs.delete(id);
+      machineReplicas.delete(id);
       unhealthy.delete(id);
     }
   for (const machine of meta.machineIds)
@@ -173,6 +182,7 @@ function watch(mode: string) {
         while (!signal.aborted) {
           if (upToDate) {
             if (mode === 'meta') metaReplica = { flock, client };
+            else machineReplicas.set(mode, flock);
             unhealthy.delete(mode);
             catalogs.set(mode, projectRows(flock.scan(), mode));
             publish();
@@ -206,6 +216,7 @@ function watch(mode: string) {
       } catch (error) {
         if (signal.aborted) return;
         if (mode === 'meta') metaReplica = undefined;
+        else machineReplicas.delete(mode);
         unhealthy.add(mode);
         const reason = error instanceof Error ? error.message : 'sync_failed';
         send({
@@ -234,6 +245,48 @@ function watch(mode: string) {
 Object.assign(globalThis, {
   dataRuntime: {
     ping: () => true,
+    creationOptions(args: { workspaceId: string; projectId: string }) {
+      if (args.workspaceId !== workspace || !metaReplica || unhealthy.size)
+        throw new Error('metadata_not_ready');
+      return creationOptions(
+        args.projectId,
+        metaReplica.flock,
+        machineReplicas,
+      );
+    },
+    async createSession(args: CreateSessionArgs) {
+      if (
+        creating ||
+        args.workspaceId !== workspace ||
+        !metaReplica ||
+        unhealthy.size
+      )
+        return { state: 'rejected' };
+      const replica = metaReplica;
+      creating = true;
+      try {
+        const options = creationOptions(
+          args.projectId,
+          replica.flock,
+          machineReplicas,
+        );
+        const result = await createSession(args, options, replica, getGrant);
+        if (result.state === 'created' && metaReplica === replica) {
+          catalogs.set('meta', projectRows(replica.flock.scan(), 'meta'));
+          publish();
+        }
+        return result;
+      } catch (error) {
+        return {
+          state:
+            error instanceof Error && error.message === 'session_already_exists'
+              ? 'unknown'
+              : 'rejected',
+        };
+      } finally {
+        creating = false;
+      }
+    },
     session(id: string) {
       return openSession(id, workspace, getGrant, send, markDispatch);
     },

@@ -1,4 +1,4 @@
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, Text, View } from 'react-native';
 import { usePalette } from '@/ui/theme';
 import { useAuth } from './AuthProvider';
 import { Button } from '@/ui/Button';
@@ -7,22 +7,13 @@ export function LoginPanel() {
     colors = usePalette();
   return (
     <View style={{ gap: 24, paddingTop: 32 }}>
-      <View
-        style={{
-          width: 64,
-          height: 64,
-          borderRadius: 20,
-          backgroundColor: colors.subtle,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Text
-          style={{ color: colors.primary, fontSize: 34, fontWeight: '700' }}
-        >
-          L
-        </Text>
-      </View>
+      <Image
+        accessibilityIgnoresInvertColors
+        accessible
+        accessibilityLabel="Lody"
+        source={require('../../../assets/logo.png')}
+        style={{ width: 72, height: 72 }}
+      />
       <View style={{ gap: 12 }}>
         <Text
           style={{

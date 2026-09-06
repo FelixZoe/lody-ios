@@ -11,6 +11,8 @@ export function Screen({ children }: PropsWithChildren) {
       style={styles.root}
     >
       <ScrollView
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={styles.content}
       >

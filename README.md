@@ -67,6 +67,8 @@ UI 首要目标是符合 [Apple HIG](https://developer.apple.com/design/human-in
 
 设置页使用 LodyKit 内的 Swift `UICollectionViewListCell`，保留 UIKit 的分组、分隔线、选中态与动态行高。导航栏沿用原生 soft scroll edge。
 
-本版面向已有会话。新建会话、附件与图片展示、完整工具卡片和权限交互尚未实现。
+项目的会话列表右上角「＋」可新建会话，选择电脑已有的助手配置并命名，创建后自动进入聊天。本地项目使用所属电脑的现有目录；GitHub 项目选择电脑与起始分支，由电脑创建工作区。模型与运行模式使用助手默认值。创建失败可以刷新配置；响应未知时不重试写入，以同步后的列表为准。
+
+附件与图片展示、完整工具卡片和权限交互尚未实现。
 
 本轮验证：`pnpm check`、8 项行为测试、Hermes bundle 与正常签名的 iOS 模拟器构建通过；模拟器确认项目搜索、真实消息 Markdown、键盘避让、浅深色、原生设置行到 Debug 的导航，以及 Debug 注入 JS 卡死后的看门狗恢复。构建过程中修复了原生 UICollectionView 误套 RN ScrollViewMarker 导致的启动崩溃。

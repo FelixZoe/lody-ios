@@ -24,6 +24,8 @@ declare class LodyKitNativeModule extends NativeModule<Events> {
   readonly runtimeInfo: RuntimeInfo;
   watchSession(id: string): Promise<void>;
   unwatchSession(id: string): Promise<void>;
+  sessionCreationOptions(payload: string): Promise<string>;
+  createSession(payload: string): Promise<string>;
   sendSessionTurn(payload: string): Promise<string>;
   watchCatalog(workspace: string, owner: string): Promise<void>;
   unwatchCatalog(owner: string): Promise<void>;
@@ -76,3 +78,7 @@ export const watchSession = (id: string) => native.watchSession(id);
 export const unwatchSession = (id: string) => native.unwatchSession(id);
 export const sendSessionTurn = (payload: string) =>
   native.sendSessionTurn(payload);
+
+export const sessionCreationOptions = (payload: string) =>
+  native.sessionCreationOptions(payload);
+export const createSession = (payload: string) => native.createSession(payload);

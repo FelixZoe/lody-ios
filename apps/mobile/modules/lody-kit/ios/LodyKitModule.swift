@@ -19,6 +19,8 @@ public final class LodyKitModule: Module {
     AsyncFunction("unwatchCatalog") { (owner: String) in self.dataRuntime.stop(owner: owner) }.runOnQueue(.main)
     AsyncFunction("watchSession") { (id: String) in self.dataRuntime.openSession(id) }.runOnQueue(.main)
     AsyncFunction("unwatchSession") { (id: String) in self.dataRuntime.closeSession(id) }.runOnQueue(.main)
+    AsyncFunction("sessionCreationOptions") { (payload: String, promise: Promise) in self.dataRuntime.command("creationOptions", payload: payload, promise: promise) }.runOnQueue(.main)
+    AsyncFunction("createSession") { (payload: String, promise: Promise) in self.dataRuntime.command("createSession", payload: payload, promise: promise) }.runOnQueue(.main)
     AsyncFunction("sendSessionTurn") { (payload: String, promise: Promise) in self.dataRuntime.sendTurn(payload, promise: promise) }.runOnQueue(.main)
     AsyncFunction("dataRuntimeStatus") { self.dataRuntime.status() }.runOnQueue(.main)
     AsyncFunction("debugHangDataRuntime") {
@@ -78,9 +80,28 @@ public final class LodyKitModule: Module {
     }
 
     View(LodyGroupedList.self) {
-      Events("onRowPress")
-      Prop("sections") { (view: LodyGroupedList, sections: [[LodyListRow]]) in
+      Events("onRowPress", "onRefresh")
+      Prop("sections") { (view: LodyGroupedList, sections: [LodyListSection]) in
         view.setSections(sections)
+      }
+      Prop("refreshing") { (view: LodyGroupedList, refreshing: Bool) in
+        view.setRefreshing(refreshing)
+      }
+      Prop("placeholder") { (view: LodyGroupedList, placeholder: String) in
+        view.setPlaceholder(placeholder)
+      }
+    }
+
+    View(LodyMenuButton.self) {
+      Events("onSelect")
+      Prop("label") { (view: LodyMenuButton, label: String) in
+        view.setLabel(label)
+      }
+      Prop("accessibilityName") { (view: LodyMenuButton, name: String) in
+        view.setAccessibilityName(name)
+      }
+      Prop("items") { (view: LodyMenuButton, items: [LodyMenuItem]) in
+        view.setItems(items)
       }
     }
 

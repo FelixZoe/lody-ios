@@ -32,9 +32,18 @@ export {
   watchSession,
   unwatchSession,
   sendSessionTurn,
+  sessionCreationOptions,
+  createSession,
 } from './runtime/LodyKit';
 
 export {
   NativeGroupedList,
   type NativeListRow,
+  type NativeListSection,
 } from './list/NativeGroupedList';
+
+export {
+  NativeMenuButton,
+  type NativeMenuButtonProps,
+  type NativeMenuItem,
+} from './chrome/NativeMenuButton';

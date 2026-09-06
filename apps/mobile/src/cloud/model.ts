@@ -117,3 +117,16 @@ export function projectRows(rows: Row[], mode: string): Catalog {
     machineIds: [...machineIds],
   };
 }
+
+export type CreationOptions = {
+  sessionId: string;
+  project: Project;
+  agents: {
+    id: string;
+    name: string;
+    machineId: string;
+    machineName: string;
+    cliType: string;
+    agentType: string;
+  }[];
+};

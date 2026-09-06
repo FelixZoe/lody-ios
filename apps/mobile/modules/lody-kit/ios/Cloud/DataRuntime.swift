@@ -138,15 +138,19 @@ final class DataRuntime: NSObject, WKScriptMessageHandler, WKNavigationDelegate 
     webView?.evaluateJavaScript("globalThis.dataRuntime.closeSession()", completionHandler: nil)
   }
   func sendTurn(_ payload: String, promise: Promise) {
+    command("sendTurn", payload: payload, promise: promise)
+  }
+  func command(_ method: String, payload: String, promise: Promise) {
     guard health.ready, let view = webView, let data = payload.data(using: .utf8), data.count <= 128 * 1024,
-          let args = try? JSONSerialization.jsonObject(with: data) as? [String: Any], args["sessionId"] as? String == sessionId else {
+          let args = try? JSONSerialization.jsonObject(with: data) as? [String: Any], (method != "sendTurn" || args["sessionId"] as? String == sessionId),
+          (method == "sendTurn" || args["workspaceId"] as? String == workspace) else {
       promise.reject("not_ready", "会话尚未同步"); return
     }
     let id = UUID(); commands[id] = promise
     DispatchQueue.main.asyncAfter(deadline: .now() + 45) { [weak self] in
       self?.commands.removeValue(forKey: id)?.reject("send_timeout", "发送结果未知，请查看同步记录，不要重复发送")
     }
-    view.callAsyncJavaScript("return JSON.stringify(await globalThis.dataRuntime.sendTurn(args))", arguments: ["args": args], in: nil, in: .page) { [weak self, weak view] result in
+    view.callAsyncJavaScript("return JSON.stringify(await globalThis.dataRuntime[method](args))", arguments: ["args": args, "method": method], in: nil, in: .page) { [weak self, weak view] result in
       guard let self, let view, self.webView === view, let pending = self.commands.removeValue(forKey: id) else { return }
       switch result { case .success(let value): pending.resolve(value); case .failure(let error): pending.reject("send_failed", error.localizedDescription) }
     }

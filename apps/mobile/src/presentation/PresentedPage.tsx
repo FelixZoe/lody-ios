@@ -183,14 +183,12 @@ function usePresentedPageSession(expectedPage?: PageDefinitionBase) {
 
   const cancel = useCallback(() => {
     if (!session) return;
-    cancelPresentation(session.id);
-    dismissPresentedPage();
+    if (cancelPresentation(session.id)) dismissPresentedPage();
   }, [session]);
   const finish = useCallback(
     (value?: unknown) => {
       if (!session) return;
-      completePresentation(session.id, value);
-      dismissPresentedPage();
+      if (completePresentation(session.id, value)) dismissPresentedPage();
     },
     [session],
   ) as PageFinish<unknown>;

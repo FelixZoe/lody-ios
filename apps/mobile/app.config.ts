@@ -8,6 +8,7 @@ const config: ExpoConfig = {
   scheme: 'lody-ios',
   orientation: 'portrait',
   userInterfaceStyle: 'automatic',
+  icon: './assets/icon.png',
   ios: {
     bundleIdentifier: 'app.innei.lody',
     supportsTablet: false,

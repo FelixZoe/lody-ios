@@ -39,14 +39,16 @@ test('presentation keeps callbacks outside URLs, isolates nested sessions, settl
   const inner = present(page, { selected: 'inner' }, { style: 'formSheet' });
   const innerId = currentId();
   assert.notEqual(innerId, outerId);
-  completePresentation(innerId, 'saved');
-  cancelPresentation(innerId);
+  assert.equal(completePresentation(innerId, 'saved'), true);
+  assert.equal(cancelPresentation(innerId), false);
   assert.deepEqual(await inner, { status: 'completed', value: 'saved' });
   assert.equal(getPresentationSession(innerId), undefined);
   assert.ok(getPresentationSession(outerId));
-  cancelPresentation(outerId);
+  assert.equal(cancelPresentation(outerId), true);
   assert.deepEqual(await outer, { status: 'cancelled' });
   assert.equal(getPresentationSession(outerId), undefined);
+  assert.equal(completePresentation(outerId, 'late creation response'), false);
+  assert.equal(cancelPresentation(outerId), false);
 
   navigationError = new Error('navigation unavailable');
   await assert.rejects(present(page), navigationError);

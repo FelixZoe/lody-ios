@@ -29,10 +29,11 @@ let sessions: readonly StoredPresentationSession[] = [];
 
 function settle(id: number, result: PresentationResult<unknown>) {
   const session = sessions.find((candidate) => candidate.id === id);
-  if (!session) return;
+  if (!session) return false;
 
   sessions = sessions.filter((candidate) => candidate.id !== id);
   session.resolve(result);
+  return true;
 }
 
 export function present<TParams, TResult>(
@@ -68,12 +69,12 @@ export function present<TParams, TResult>(
 
 export type PresentPage = typeof present;
 
-export function completePresentation(id: number, value: unknown): void {
-  settle(id, { status: 'completed', value });
+export function completePresentation(id: number, value: unknown): boolean {
+  return settle(id, { status: 'completed', value });
 }
 
-export function cancelPresentation(id: number): void {
-  settle(id, { status: 'cancelled' });
+export function cancelPresentation(id: number): boolean {
+  return settle(id, { status: 'cancelled' });
 }
 
 export function getPresentationSession(

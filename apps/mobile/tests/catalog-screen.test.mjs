@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import { transformSync } from '@babel/core';
 
 const require = createRequire(import.meta.url);
-test('compiled project screen renders login-to-loading and refresh-to-loading transitions', () => {
+test('compiled project screen renders login gate, project rows and empty placeholder', () => {
   const filename = new URL(
     '../src/features/machines/MachinesScreen.tsx',
     import.meta.url,
@@ -30,40 +30,24 @@ test('compiled project screen renders login-to-loading and refresh-to-loading tr
     react: {
       ...react,
       useState: (initial) => [
-        ['', catalog, null, true, 0][stateIndex++] ?? initial,
+        ['', catalog, null, true, 0, ''][stateIndex++] ?? initial,
         () => {},
       ],
       useEffect: () => {},
+      useMemo: (factory) => factory(),
     },
     'react/compiler-runtime': {
       c: (size) => Array(size).fill(Symbol.for('react.memo_cache_sentinel')),
     },
-    'react-native': {
-      FlatList: 'FlatList',
-      ActivityIndicator: 'ActivityIndicator',
-      Text: 'Text',
-      View: 'View',
-    },
-    'react-native-screens/experimental': {
-      ScrollViewMarker: 'ScrollViewMarker',
-    },
-    'expo-router': {
-      useTheme: () => ({ colors: { text: '#000', card: '#fff' } }),
-    },
+    'expo-router': { Stack: { Screen: 'Stack.Screen' } },
     '@/features/auth/AuthProvider': { useAuth: () => ({ account }) },
     '@/features/auth/LoginPanel': { LoginPanel: 'LoginPanel' },
-    '@/ui/Screen': { Screen: 'Screen', softScrollEdgeEffects: {} },
-    '@/ui/theme': {
-      usePalette: () => ({
-        text: '#000',
-        card: '#fff',
-        muted: '#666',
-        subtle: '#eee',
-      }),
-    },
-    '@/ui/Button': { Button: 'Button' },
+    '@/ui/Screen': { Screen: 'Screen' },
     '@/cloud/runtime': {},
-    '@lody-ios/kit': {},
+    '@lody-ios/kit': {
+      NativeGroupedList: 'NativeGroupedList',
+      NativeMenuButton: 'NativeMenuButton',
+    },
     '@/presentation': {},
     './ProjectSessionsScreen': {},
   };
@@ -73,26 +57,34 @@ test('compiled project screen renders login-to-loading and refresh-to-loading tr
     exports,
     false,
   );
-  const render = () => {
+  const list = () => {
     stateIndex = 0;
-    return exports.default();
+    const children = exports.default().props.children;
+    return children.find((child) => child.type === 'NativeGroupedList');
   };
-  assert.equal(render().type, 'Screen');
+
+  stateIndex = 0;
+  assert.equal(exports.default().type, 'Screen');
+
   account = {
     user: { name: 'Synthetic user' },
     workspaces: [{ id: 'w1', name: 'Workspace' }],
   };
-  assert.deepEqual(render().props.children.props.data, []);
+  assert.deepEqual(list().props.sections[0].rows, []);
+  assert.match(list().props.placeholder, /载入/);
+
   catalog = {
-    projects: [{ id: 'p1', name: 'Project' }],
-    sessions: [],
+    projects: [{ id: 'p1', name: 'Project', rootPath: '/tmp/p1' }],
+    sessions: [{ id: 's1', projectId: 'p1' }],
     machineIds: [],
   };
-  const list = render().props.children;
-  assert.equal(list.props.data[0].id, 'p1');
-  assert.doesNotThrow(() =>
-    list.props.renderItem({ item: catalog.projects[0] }),
-  );
+  const [row] = list().props.sections[0].rows;
+  assert.equal(row.id, 'p1');
+  assert.equal(row.subtitle, '/tmp/p1');
+  assert.equal(row.value, '1');
+  assert.equal(row.image, 'folder');
+  assert.equal(row.navigates, true);
+
   catalog = null;
-  assert.deepEqual(render().props.children.props.data, []);
+  assert.deepEqual(list().props.sections[0].rows, []);
 });

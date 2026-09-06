@@ -72,7 +72,7 @@ function unpack(bytes: Uint8Array) {
 export function importUpdates(doc: LoroDoc, bytes: Uint8Array) {
   for (const frame of decodeFrames(bytes)) doc.import(frame);
 }
-async function clientFor(id: string, getGrant: () => Promise<Grant>) {
+export async function clientFor(id: string, getGrant: () => Promise<Grant>) {
   const grant = await getGrant();
   return new StreamsClient({
     url: `${grant.gatewayBaseUrl.replace(/\/$/, '')}/ds/lody/${encodeURIComponent(id)}`,
