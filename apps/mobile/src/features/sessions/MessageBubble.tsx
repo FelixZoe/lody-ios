@@ -7,7 +7,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import Markdown from 'react-native-markdown-display';
-import { usePalette } from '@/ui/theme';
+import { usePalette } from '@/theme/palette';
 export type Message = {
   id: string;
   role: string;
@@ -52,24 +52,28 @@ export const MessageBubble = memo(function MessageBubble({
               width: 24,
               height: 24,
               borderRadius: 8,
-              backgroundColor: colors.subtle,
+              backgroundColor: colors.fill,
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
             <Text
-              style={{ color: colors.primary, fontWeight: '700', fontSize: 13 }}
+              style={{ color: colors.accent, fontWeight: '700', fontSize: 13 }}
             >
               L
             </Text>
           </View>
           <Text
-            style={{ color: colors.muted, fontSize: 12, fontWeight: '600' }}
+            style={{
+              color: colors.secondaryLabel,
+              fontSize: 12,
+              fontWeight: '600',
+            }}
           >
             LODY
           </Text>
           {!message.finished ? (
-            <ActivityIndicator size="small" color={colors.primary} />
+            <ActivityIndicator size="small" color={colors.accent} />
           ) : null}
         </View>
       ) : null}
@@ -81,7 +85,7 @@ export const MessageBubble = memo(function MessageBubble({
             onPress={() => setExpanded((v) => !v)}
             style={{ minHeight: 44, justifyContent: 'center' }}
           >
-            <Text style={{ color: colors.muted, fontSize: 13 }}>
+            <Text style={{ color: colors.secondaryLabel, fontSize: 13 }}>
               {expanded ? '⌄' : '›'}　
               {message.finished ? '查看思考过程' : '正在思考'}
             </Text>
@@ -90,11 +94,11 @@ export const MessageBubble = memo(function MessageBubble({
             <Text
               selectable
               style={{
-                color: colors.muted,
+                color: colors.secondaryLabel,
                 fontSize: 14,
                 lineHeight: 23,
                 padding: 14,
-                backgroundColor: colors.subtle,
+                backgroundColor: colors.fill,
                 borderRadius: 12,
               }}
             >
@@ -105,7 +109,7 @@ export const MessageBubble = memo(function MessageBubble({
       ) : null}
       <View
         style={{
-          backgroundColor: user ? colors.subtle : 'transparent',
+          backgroundColor: user ? colors.fill : 'transparent',
           borderRadius: 22,
           borderCurve: 'continuous',
           paddingHorizontal: user ? 16 : 0,
@@ -119,7 +123,7 @@ export const MessageBubble = memo(function MessageBubble({
               <Text
                 key={index}
                 selectable
-                style={{ color: colors.text, fontSize: 16, lineHeight: 25 }}
+                style={{ color: colors.label, fontSize: 16, lineHeight: 25 }}
               >
                 {block.text.trim()}
               </Text>
@@ -129,13 +133,16 @@ export const MessageBubble = memo(function MessageBubble({
                 onLinkPress={openLink}
                 rules={{
                   image: (node) => (
-                    <Text key={node.key} style={{ color: colors.muted }}>
+                    <Text
+                      key={node.key}
+                      style={{ color: colors.secondaryLabel }}
+                    >
                       [图片：{node.attributes.alt || '请在电脑上查看'}]
                     </Text>
                   ),
                 }}
                 style={{
-                  body: { color: colors.text, fontSize: 16, lineHeight: 26 },
+                  body: { color: colors.label, fontSize: 16, lineHeight: 26 },
                   paragraph: { marginTop: 0, marginBottom: 12 },
                   heading1: {
                     fontSize: 25,
@@ -152,30 +159,30 @@ export const MessageBubble = memo(function MessageBubble({
                     fontWeight: '600',
                   },
                   heading3: { fontSize: 18, lineHeight: 26, fontWeight: '600' },
-                  link: { color: colors.primary },
+                  link: { color: colors.accent },
                   code_inline: {
-                    backgroundColor: colors.subtle,
-                    color: colors.text,
+                    backgroundColor: colors.fill,
+                    color: colors.label,
                     fontFamily: 'Menlo',
                     fontSize: 13,
                   },
                   fence: {
-                    backgroundColor: colors.subtle,
-                    borderColor: colors.border,
+                    backgroundColor: colors.fill,
+                    borderColor: colors.separator,
                     borderRadius: 12,
                     padding: 14,
-                    color: colors.text,
+                    color: colors.label,
                     fontFamily: 'Menlo',
                     fontSize: 13,
                     lineHeight: 21,
                   },
                   blockquote: {
-                    backgroundColor: colors.subtle,
-                    borderColor: colors.primary,
+                    backgroundColor: colors.fill,
+                    borderColor: colors.accent,
                   },
-                  hr: { backgroundColor: colors.border },
-                  table: { borderColor: colors.border },
-                  tr: { borderColor: colors.border },
+                  hr: { backgroundColor: colors.separator },
+                  table: { borderColor: colors.separator },
+                  tr: { borderColor: colors.separator },
                 }}
               >
                 {block.text}
@@ -187,14 +194,20 @@ export const MessageBubble = memo(function MessageBubble({
               style={{
                 padding: 12,
                 borderWidth: 1,
-                borderColor: colors.border,
+                borderColor: colors.separator,
                 borderRadius: 12,
               }}
             >
-              <Text style={{ color: colors.muted, fontSize: 13 }}>
+              <Text style={{ color: colors.secondaryLabel, fontSize: 13 }}>
                 {block.label || block.type}
               </Text>
-              <Text style={{ color: colors.muted, fontSize: 11, marginTop: 4 }}>
+              <Text
+                style={{
+                  color: colors.secondaryLabel,
+                  fontSize: 11,
+                  marginTop: 4,
+                }}
+              >
                 完整内容可在电脑上查看
               </Text>
             </View>
@@ -202,7 +215,13 @@ export const MessageBubble = memo(function MessageBubble({
         )}
       </View>
       {user && ['pending', 'seen', 'processing'].includes(message.status) ? (
-        <Text style={{ color: colors.muted, fontSize: 11, textAlign: 'right' }}>
+        <Text
+          style={{
+            color: colors.secondaryLabel,
+            fontSize: 11,
+            textAlign: 'right',
+          }}
+        >
           {message.status === 'pending' ? '等待接收' : '正在处理'}
         </Text>
       ) : null}

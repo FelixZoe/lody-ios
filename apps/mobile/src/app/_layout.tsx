@@ -3,13 +3,17 @@ import { AuthProvider } from '@/features/auth/AuthProvider';
 import { StatusBar } from 'expo-status-bar';
 import { useColorScheme } from 'react-native';
 import { nativePresentationOptions } from '@/presentation';
-import { lightTheme, darkTheme } from '@/ui/theme';
+import { navigationThemes } from '@/theme/palette';
 import { softScrollEdgeEffects } from '@/ui/Screen';
+import { ToastHost } from '@/ui/ToastHost';
 
 export const unstable_settings = { initialRouteName: '(tabs)' };
 
 export default function RootLayout() {
-  const theme = useColorScheme() === 'dark' ? darkTheme : lightTheme;
+  const theme =
+    useColorScheme() === 'dark'
+      ? navigationThemes.dark
+      : navigationThemes.light;
   return (
     <ThemeProvider value={theme}>
       <AuthProvider>
@@ -33,6 +37,7 @@ export default function RootLayout() {
             }
           />
         </Stack>
+        <ToastHost />
       </AuthProvider>
     </ThemeProvider>
   );

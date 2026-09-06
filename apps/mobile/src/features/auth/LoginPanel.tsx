@@ -1,5 +1,5 @@
 import { ActivityIndicator, Image, Pressable, Text, View } from 'react-native';
-import { usePalette } from '@/ui/theme';
+import { usePalette } from '@/theme/palette';
 import { useAuth } from './AuthProvider';
 import { Button } from '@/ui/Button';
 export function LoginPanel() {
@@ -17,7 +17,7 @@ export function LoginPanel() {
       <View style={{ gap: 12 }}>
         <Text
           style={{
-            color: colors.text,
+            color: colors.label,
             fontSize: 34,
             fontWeight: '700',
             lineHeight: 43,
@@ -26,7 +26,9 @@ export function LoginPanel() {
         >
           把工作，{'\n'}带在身边。
         </Text>
-        <Text style={{ color: colors.muted, fontSize: 16, lineHeight: 25 }}>
+        <Text
+          style={{ color: colors.secondaryLabel, fontSize: 16, lineHeight: 25 }}
+        >
           连接 Lody，查看项目进展，{'\n'}与电脑上的智能助手继续对话。
         </Text>
       </View>
@@ -39,11 +41,13 @@ export function LoginPanel() {
             gap: 12,
           }}
         >
-          <Text style={{ color: colors.muted }}>请在授权页面核对代码</Text>
+          <Text style={{ color: colors.secondaryLabel }}>
+            请在授权页面核对代码
+          </Text>
           <Text
             selectable
             style={{
-              color: colors.text,
+              color: colors.label,
               fontFamily: 'Menlo',
               fontSize: 28,
               fontWeight: '600',
@@ -56,7 +60,7 @@ export function LoginPanel() {
       ) : null}
       {auth.busy ? (
         <View style={{ gap: 12, alignItems: 'center' }}>
-          <ActivityIndicator color={colors.primary} />
+          <ActivityIndicator color={colors.accent} />
           <Button testID="auth-cancel" onPress={auth.cancel}>
             取消
           </Button>
@@ -68,7 +72,7 @@ export function LoginPanel() {
           onPress={() => void auth.login()}
           style={{
             minHeight: 54,
-            backgroundColor: colors.primary,
+            backgroundColor: colors.accent,
             borderRadius: 16,
             alignItems: 'center',
             justifyContent: 'center',
@@ -81,13 +85,15 @@ export function LoginPanel() {
           </Text>
         </Pressable>
       )}
-      <Text style={{ color: colors.muted, fontSize: 12, lineHeight: 19 }}>
+      <Text
+        style={{ color: colors.secondaryLabel, fontSize: 12, lineHeight: 19 }}
+      >
         登录将在官方授权页完成。目前使用 lody-cli
         设备授权，页面会显示该客户端名称。
       </Text>
       {auth.error ? (
         <View>
-          <Text style={{ color: colors.notification, lineHeight: 22 }}>
+          <Text style={{ color: colors.danger, lineHeight: 22 }}>
             {auth.error}
           </Text>
           <Button onPress={() => void auth.restore()}>重试连接</Button>

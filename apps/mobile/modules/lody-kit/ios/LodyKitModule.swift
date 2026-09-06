@@ -84,6 +84,12 @@ public final class LodyKitModule: Module {
       Prop("sections") { (view: LodyGroupedList, sections: [LodyListSection]) in
         view.setSections(sections)
       }
+      Prop("transparent") { (view: LodyGroupedList, transparent: Bool) in
+        view.setTransparent(transparent)
+      }
+      Prop("accent") { (view: LodyGroupedList, accent: String) in
+        view.setAccent(accent)
+      }
       Prop("refreshing") { (view: LodyGroupedList, refreshing: Bool) in
         view.setRefreshing(refreshing)
       }
@@ -92,23 +98,43 @@ public final class LodyKitModule: Module {
       }
     }
 
-    View(LodyMenuButton.self) {
-      Events("onSelect")
-      Prop("label") { (view: LodyMenuButton, label: String) in
-        view.setLabel(label)
-      }
-      Prop("accessibilityName") { (view: LodyMenuButton, name: String) in
-        view.setAccessibilityName(name)
-      }
-      Prop("items") { (view: LodyMenuButton, items: [LodyMenuItem]) in
-        view.setItems(items)
-      }
-    }
 
     View(LodyCloseButton.self) {
       Events("onClose")
       Prop("label") { (view: LodyCloseButton, label: String) in
         view.setAccessibilityName(label)
+      }
+    }
+
+    View(LodySymbolButton.self) {
+      Events("onSymbolPress")
+      Prop("symbol") { (view: LodySymbolButton, symbol: String) in
+        view.setSymbol(symbol)
+      }
+      Prop("accessibilityName") { (view: LodySymbolButton, name: String) in
+        view.setAccessibilityName(name)
+      }
+      Prop("prominent") { (view: LodySymbolButton, prominent: Bool) in
+        view.setProminent(prominent)
+      }
+      Prop("disabled") { (view: LodySymbolButton, disabled: Bool) in
+        view.setDisabled(disabled)
+      }
+      Prop("tint") { (view: LodySymbolButton, tint: String) in
+        view.setTint(tint)
+      }
+    }
+
+    View(LodyPressable.self) {
+      Events("onNativePress")
+      Prop("pressScale") { (view: LodyPressable, scale: Double) in
+        view.setPressScale(scale)
+      }
+      Prop("haptic") { (view: LodyPressable, haptic: Bool) in
+        view.setHaptic(haptic)
+      }
+      Prop("disabled") { (view: LodyPressable, disabled: Bool) in
+        view.setDisabled(disabled)
       }
     }
   }

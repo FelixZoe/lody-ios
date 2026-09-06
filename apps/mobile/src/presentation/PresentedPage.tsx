@@ -13,9 +13,9 @@ import {
   useState,
 } from 'react';
 
-import { NativeCloseButton } from '@lody-ios/kit';
 import type { ColorValue } from 'react-native';
 import { softScrollEdgeEffects } from '@/ui/Screen';
+import { isIOS26 } from '@/ui/platform';
 
 import {
   type PageDefinitionBase,
@@ -122,7 +122,10 @@ export function nativePresentationOptions(
     animation: style === 'push' ? 'default' : nativeAnimation(animationType),
     contentStyle: {
       backgroundColor:
-        style === 'overFullScreen' ? 'transparent' : backgroundColor,
+        style === 'overFullScreen' ||
+        (isIOS26 && (style === 'formSheet' || style === 'pageSheet'))
+          ? 'transparent'
+          : backgroundColor,
     },
     gestureEnabled: dismissible,
     headerBackVisible: style === 'push' && dismissible,
@@ -233,17 +236,13 @@ export function PresentedPageRoute() {
   return (
     <>
       {showCloseItem ? (
-        <Stack.Screen
-          options={{
-            headerRight: () => (
-              <NativeCloseButton
-                label={`关闭${session.page.title}`}
-                onPress={runtime.cancel}
-                style={{ width: 44, height: 44 }}
-              />
-            ),
-          }}
-        />
+        <Stack.Toolbar placement="right">
+          <Stack.Toolbar.Button
+            accessibilityLabel={`关闭${session.page.title}`}
+            icon="xmark"
+            onPress={runtime.cancel}
+          />
+        </Stack.Toolbar>
       ) : null}
       <PageRuntimeProvider value={runtime}>
         <Component />

@@ -1,25 +1,59 @@
-import { useTheme } from 'expo-router';
-import type { PropsWithChildren } from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { NativePressable } from '@lody-ios/kit';
+import type { StyleProp, ViewStyle } from 'react-native';
+import { usePalette } from '@/theme/palette';
+import { AppText } from './AppText';
+
+export type ButtonVariant = 'filled' | 'plain';
 
 export function Button({
+  label,
   children,
   onPress,
+  variant = 'plain',
+  disabled = false,
   testID,
-}: PropsWithChildren<{ onPress: () => void; testID?: string }>) {
-  const { colors } = useTheme();
+  style,
+}: {
+  label?: string;
+  children?: string;
+  onPress: () => void;
+  variant?: ButtonVariant;
+  disabled?: boolean;
+  testID?: string;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const colors = usePalette();
+  const filled = variant === 'filled';
+  const text = label ?? children ?? '';
   return (
-    <Pressable
+    <NativePressable
       testID={testID}
-      accessibilityRole="button"
+      accessibilityLabel={text}
+      disabled={disabled}
       onPress={onPress}
-      style={styles.button}
+      style={[
+        {
+          minHeight: 44,
+          paddingHorizontal: filled ? 20 : 0,
+          borderRadius: filled ? 12 : 0,
+          borderCurve: 'continuous',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: filled ? colors.accent : undefined,
+          opacity: disabled ? 0.4 : 1,
+        },
+        style,
+      ]}
     >
-      <Text style={[styles.label, { color: colors.primary }]}>{children}</Text>
-    </Pressable>
+      <AppText
+        variant="body"
+        style={{
+          color: filled ? colors.onAccent : colors.accent,
+          fontWeight: filled ? '600' : '400',
+        }}
+      >
+        {text}
+      </AppText>
+    </NativePressable>
   );
 }
-const styles = StyleSheet.create({
-  button: { minHeight: 44, justifyContent: 'center', paddingVertical: 10 },
-  label: { fontSize: 17 },
-});

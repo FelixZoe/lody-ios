@@ -7,6 +7,8 @@ struct LodyListRow: Record {
   @Field var subtitle: String = ""
   @Field var value: String = ""
   @Field var image: String = ""
+  @Field var imageTint: String = ""
+  @Field var subtitleMono: Bool = false
   @Field var action: Bool = false
   @Field var navigates: Bool = false
   @Field var disclosure: Bool = false
@@ -39,16 +41,27 @@ final class LodyGroupedList: ExpoView, UICollectionViewDataSource, UICollectionV
   private let placeholder = UILabel()
   private var placeholderText = ""
 
+  private static var accent: UIColor = .systemBlue
+  private var transparent = false
+
   private let registration = UICollectionView.CellRegistration<UICollectionViewListCell, LodyListRow> { cell, _, row in
+    let accent = LodyGroupedList.accent
     var content = UIListContentConfiguration.subtitleCell()
     content.text = row.title
     content.secondaryText = row.subtitle.isEmpty ? nil : row.subtitle
     content.textProperties.numberOfLines = 0
     content.secondaryTextProperties.numberOfLines = 1
-    content.textProperties.color = row.destructive ? .systemRed : (row.action && !row.disclosure ? .systemBlue : .label)
+    if row.subtitleMono {
+      content.secondaryTextProperties.font = .monospacedSystemFont(
+        ofSize: UIFont.preferredFont(forTextStyle: .footnote).pointSize,
+        weight: .regular
+      )
+    }
+    content.textProperties.color = row.destructive ? .systemRed : .label
     if !row.image.isEmpty {
       content.image = UIImage(systemName: row.image)
-      content.imageProperties.tintColor = row.destructive ? .systemRed : .systemBlue
+      content.imageProperties.tintColor =
+        lodyTint(row.imageTint) ?? (row.destructive ? .systemRed : accent)
       content.imageProperties.preferredSymbolConfiguration = .init(textStyle: .title3)
     }
     cell.contentConfiguration = content
@@ -164,6 +177,21 @@ final class LodyGroupedList: ExpoView, UICollectionViewDataSource, UICollectionV
     updatePlaceholder()
   }
 
+  /// A sheet paints its own material. Dropping the list's ground lets that
+  /// material show between groups; the cells keep their grouped background so
+  /// rows still read as cards.
+  func setTransparent(_ value: Bool) {
+    guard value != transparent else { return }
+    transparent = value
+    collection.backgroundColor = value ? .clear : .systemGroupedBackground
+  }
+
+  func setAccent(_ value: String) {
+    guard let color = lodyTint(value), color != LodyGroupedList.accent else { return }
+    LodyGroupedList.accent = color
+    collection.reloadData()
+  }
+
   func setRefreshing(_ value: Bool) {
     if value, !refreshControl.isRefreshing {
       refreshControl.beginRefreshing()
@@ -190,7 +218,20 @@ final class LodyGroupedList: ExpoView, UICollectionViewDataSource, UICollectionV
   func numberOfSections(in collectionView: UICollectionView) -> Int { sections.count }
   func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int { sections[section].rows.count }
   func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
-    collectionView.dequeueConfiguredReusableCell(using: registration, for: indexPath, item: sections[indexPath.section].rows[indexPath.item])
+    let cell = collectionView.dequeueConfiguredReusableCell(
+      using: registration,
+      for: indexPath,
+      item: sections[indexPath.section].rows[indexPath.item]
+    )
+    if transparent {
+      // On a glass sheet UIKit renders the default grouped fill as a vibrant
+      // wash, so content behind the sheet bleeds through the row. Rows have to
+      // opt back into an opaque card.
+      var background = UIBackgroundConfiguration.listGroupedCell()
+      background.backgroundColor = .secondarySystemGroupedBackground
+      cell.backgroundConfiguration = background
+    }
+    return cell
   }
   func collectionView(_ collectionView: UICollectionView, viewForSupplementaryElementOfKind kind: String, at indexPath: IndexPath) -> UICollectionReusableView {
     let section = sections[indexPath.section]

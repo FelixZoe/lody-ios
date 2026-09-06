@@ -59,6 +59,9 @@ final class DataRuntime: NSObject, WKScriptMessageHandler, WKNavigationDelegate 
     config.websiteDataStore = .nonPersistent()
     config.userContentController.add(self, name: "dataRuntime")
     let view = WKWebView(frame: .zero, configuration: config)
+    #if DEBUG
+    if #available(iOS 16.4, *) { view.isInspectable = true }
+    #endif
     view.navigationDelegate = self
     webView = view
     publish("starting", reason: reason)

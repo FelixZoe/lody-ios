@@ -1,0 +1,19 @@
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
+
+export function relativeTime(value: string, now = Date.now()) {
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) return '';
+  const elapsed = now - parsed;
+  if (elapsed < MINUTE) return '刚刚';
+  if (elapsed < HOUR) return `${Math.floor(elapsed / MINUTE)} 分钟前`;
+
+  const date = new Date(parsed);
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
+  if (parsed >= startOfToday.getTime())
+    return `${Math.floor(elapsed / HOUR)} 小时前`;
+  if (parsed >= startOfToday.getTime() - 24 * HOUR) return '昨天';
+
+  return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+}

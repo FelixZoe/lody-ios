@@ -24,5 +24,5 @@ export function Screen({ children }: PropsWithChildren) {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  content: { padding: 24, gap: 20 },
+  content: { padding: 16, gap: 12 },
 });

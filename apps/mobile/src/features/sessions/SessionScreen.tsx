@@ -8,7 +8,7 @@ import {
   View,
   ActivityIndicator,
 } from 'react-native';
-import { usePalette } from '@/ui/theme';
+import { usePalette } from '@/theme/palette';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MessageBubble, type Message } from './MessageBubble';
 import { ScrollViewMarker } from 'react-native-screens/experimental';
@@ -21,12 +21,16 @@ import {
 import { definePage, usePageRuntime } from '@/presentation';
 import { useAuth } from '@/features/auth/AuthProvider';
 import { softScrollEdgeEffects } from '@/ui/Screen';
+import { Composer } from '@/ui/Composer';
+import { AppText } from '@/ui/AppText';
 import type { Session } from '@/cloud/model';
+
+type SessionParams = { session: Session; initialDraft?: string };
 type Snapshot = { status: string; reason?: string; messages: Message[] };
 function SessionScreen() {
   const {
-    params: { session },
-  } = usePageRuntime<{ session: Session }>();
+    params: { session, initialDraft },
+  } = usePageRuntime<SessionParams>();
   const { account } = useAuth(),
     colors = usePalette();
   const insets = useSafeAreaInsets();
@@ -34,14 +38,15 @@ function SessionScreen() {
     status: 'syncing',
     messages: [],
   });
-  const [draft, setDraft] = useState(''),
+  const [draft, setDraft] = useState(initialDraft ?? ''),
     [sending, setSending] = useState(false),
     [receipt, setReceipt] = useState('');
   const [showJump, setShowJump] = useState(false);
   const [uncertain, setUncertain] = useState(false);
   const list = useRef<FlatList<Message>>(null),
     following = useRef(true),
-    busy = useRef(false);
+    busy = useRef(false),
+    autoSent = useRef(false);
   useEffect(() => {
     const subscription = addDataRuntimeListener((event) => {
       if (event.sessionId === session.id && event.session) {
@@ -65,6 +70,13 @@ function SessionScreen() {
       void unwatchSession(session.id);
     };
   }, [session.id]);
+  useEffect(() => {
+    if (autoSent.current || !initialDraft || snapshot.status !== 'live') return;
+    autoSent.current = true;
+    void submit();
+    // Dispatch once when the new session first goes live; never replay on reconnect.
+  }, [snapshot.status, initialDraft]);
+
   async function submit() {
     if (
       busy.current ||
@@ -177,27 +189,9 @@ function SessionScreen() {
               );
           }}
           ListHeaderComponent={
-            <View style={{ gap: 10, paddingVertical: 12, marginBottom: 12 }}>
-              <Text
-                style={{
-                  color: colors.muted,
-                  fontSize: 12,
-                  fontWeight: '600',
-                  letterSpacing: 1,
-                }}
-              >
-                项目对话
-              </Text>
-              <Text
-                style={{
-                  color: colors.text,
-                  fontSize: 24,
-                  lineHeight: 32,
-                  fontWeight: '600',
-                }}
-              >
-                {session.title}
-              </Text>
+            <View style={{ gap: 8, paddingVertical: 12, marginBottom: 12 }}>
+              <AppText variant="eyebrow">项目对话</AppText>
+              <AppText variant="title">{session.title}</AppText>
             </View>
           }
           ListEmptyComponent={
@@ -205,10 +199,10 @@ function SessionScreen() {
               style={{ paddingVertical: 60, alignItems: 'center', gap: 14 }}
             >
               {snapshot.status !== 'live' ? (
-                <ActivityIndicator color={colors.primary} />
+                <ActivityIndicator color={colors.accent} />
               ) : null}
               <Text
-                style={{ color: colors.text, fontSize: 22, fontWeight: '600' }}
+                style={{ color: colors.label, fontSize: 22, fontWeight: '600' }}
               >
                 {snapshot.status === 'live'
                   ? '想继续做些什么？'
@@ -216,7 +210,7 @@ function SessionScreen() {
               </Text>
               <Text
                 style={{
-                  color: colors.muted,
+                  color: colors.secondaryLabel,
                   textAlign: 'center',
                   lineHeight: 22,
                 }}
@@ -239,12 +233,12 @@ function SessionScreen() {
             paddingVertical: 12,
             borderRadius: 22,
             backgroundColor: colors.card,
-            borderColor: colors.border,
+            borderColor: colors.separator,
             borderWidth: 1,
             marginBottom: 8,
           }}
         >
-          <Text style={{ color: colors.primary }}>↓ 最新消息</Text>
+          <Text style={{ color: colors.accent }}>↓ 最新消息</Text>
         </Pressable>
       ) : null}
       <View
@@ -257,12 +251,13 @@ function SessionScreen() {
         }}
       >
         {uncertain ? (
-          <Text
+          <AppText
             accessibilityLiveRegion="polite"
-            style={{ color: colors.notification, fontSize: 13, lineHeight: 20 }}
+            variant="meta"
+            style={{ color: colors.danger }}
           >
             {receipt}
-          </Text>
+          </AppText>
         ) : null}
         {disconnected ? (
           <Pressable
@@ -274,88 +269,32 @@ function SessionScreen() {
             }}
             style={{ minHeight: 44, justifyContent: 'center' }}
           >
-            <Text style={{ color: colors.primary }}>
+            <AppText variant="body" style={{ color: colors.accent }}>
               连接已暂停 · 点此重新同步
-            </Text>
+            </AppText>
           </Pressable>
         ) : null}
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'flex-end',
-            gap: 8,
-            backgroundColor: colors.card,
-            borderRadius: 26,
-            borderCurve: 'continuous',
-            borderColor: colors.border,
-            borderWidth: 1,
-            padding: 7,
-          }}
-        >
-          <TextInput
-            testID="session-input"
-            accessibilityLabel="消息内容"
-            placeholder={session.archived ? '此会话已归档' : '给 Lody 发消息…'}
-            placeholderTextColor={colors.muted}
-            multiline
-            maxLength={32000}
-            value={draft}
-            onChangeText={setDraft}
-            editable={!sending && !uncertain && !session.archived}
-            style={{
-              flex: 1,
-              color: colors.text,
-              fontSize: 16,
-              lineHeight: 23,
-              paddingHorizontal: 12,
-              paddingTop: 11,
-              paddingBottom: 11,
-              minHeight: 44,
-              maxHeight: 140,
-            }}
-          />
-          <Pressable
-            testID="session-send"
-            accessibilityRole="button"
-            accessibilityLabel="发送消息"
-            accessibilityState={{ disabled: !canSend }}
-            disabled={!canSend}
-            onPress={() => void submit()}
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 22,
-              backgroundColor: canSend ? colors.primary : colors.subtle,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            {sending ? (
-              <ActivityIndicator color={colors.primary} />
-            ) : (
-              <Text
-                style={{
-                  color: canSend ? colors.onAccent : colors.muted,
-                  fontSize: 26,
-                  fontWeight: '500',
-                }}
-              >
-                ↑
-              </Text>
-            )}
-          </Pressable>
-        </View>
-        <Text
+        <Composer
+          testID="session-input"
+          placeholder={session.archived ? '此会话已归档' : '给 Lody 发消息…'}
+          value={draft}
+          onChangeText={setDraft}
+          onSubmit={() => void submit()}
+          editable={canSend || (!sending && !uncertain && !session.archived)}
+          sending={sending}
+        />
+        <AppText
           accessibilityLiveRegion="polite"
-          style={{ color: colors.muted, fontSize: 11, textAlign: 'center' }}
+          variant="meta"
+          style={{ textAlign: 'center' }}
         >
           {sending ? '正在发送…' : connection} · 回复由连接的电脑生成
-        </Text>
+        </AppText>
       </View>
     </KeyboardAvoidingView>
   );
 }
-export const sessionPage = definePage<{ session: Session }>({
+export const sessionPage = definePage<SessionParams>({
   id: 'session',
   title: '消息',
   Component: SessionScreen,
