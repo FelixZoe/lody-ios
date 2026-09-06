@@ -30,6 +30,7 @@ env:
   MOBILE_DIR: apps/mobile
   APPLE_TEAM_ID: KAMM5N88X3
   LODY_BUNDLE_ID: app.innei.lody
+  IOS_PROFILE_NAME: Lody App Store
   ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
   ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
   ASC_BYPASS_KEYCHAIN: '1'
@@ -174,6 +175,32 @@ jobs:
           printf '%s\n' "$identities"
           grep -q 'Apple Distribution:' <<< "$identities"
 
+      - name: Install provisioning profile
+        run: |
+          set -euo pipefail
+          profile_id="$(asc profiles list --output json \
+            | jq -r --arg name "$IOS_PROFILE_NAME" \
+              '[.data[] | select(.attributes.name == $name and .attributes.profileState == "ACTIVE")][0].id // ""')"
+          if [ -z "$profile_id" ]; then
+            echo "::error::No active App Store profile named '$IOS_PROFILE_NAME' in App Store Connect."
+            exit 1
+          fi
+          profile="$RUNNER_TEMP/lody.mobileprovision"
+          asc profiles download --id "$profile_id" --output "$profile"
+          plist="$RUNNER_TEMP/lody-profile.plist"
+          security cms -D -i "$profile" > "$plist"
+          uuid="$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$plist")"
+          app_id="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$plist")"
+          test "$app_id" = "$APPLE_TEAM_ID.$LODY_BUNDLE_ID"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:get-task-allow' "$plist")" = 'false'
+          for dir in "$HOME/Library/MobileDevice/Provisioning Profiles" \
+                     "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+            mkdir -p "$dir"
+            cp "$profile" "$dir/$uuid.mobileprovision"
+          done
+          echo "IOS_PROFILE_UUID=$uuid" >> "$GITHUB_ENV"
+          echo "Installed $IOS_PROFILE_NAME ($uuid)"
+
       - name: Archive
         working-directory: ${{ env.MOBILE_DIR }}/ios
         run: |
@@ -226,8 +253,13 @@ jobs:
           <dict>
             <key>method</key><string>app-store-connect</string>
             <key>destination</key><string>export</string>
-            <key>signingStyle</key><string>automatic</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>Apple Distribution</string>
             <key>teamID</key><string>$APPLE_TEAM_ID</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>$LODY_BUNDLE_ID</key><string>$IOS_PROFILE_NAME</string>
+            </dict>
             <key>manageAppVersionAndBuildNumber</key><false/>
           </dict>
           </plist>
@@ -285,6 +317,11 @@ jobs:
         run: |
           security delete-keychain "$RUNNER_TEMP/ci.keychain-db" || true
           rm -f "$RUNNER_TEMP/dist.p12" "$RUNNER_TEMP"/AuthKey_*.p8
+          rm -f "$RUNNER_TEMP/lody.mobileprovision" "$RUNNER_TEMP/lody-profile.plist"
+          if [[ "${IOS_PROFILE_UUID:-}" =~ ^[0-9A-Fa-f-]{36}$ ]]; then
+            rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/$IOS_PROFILE_UUID.mobileprovision"
+            rm -f "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/$IOS_PROFILE_UUID.mobileprovision"
+          fi
 
   notify:
     name: Notify Telegram
