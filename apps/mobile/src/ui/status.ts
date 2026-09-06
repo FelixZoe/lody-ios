@@ -3,7 +3,9 @@ export type SessionState =
 
 const states: Record<string, SessionState> = {
   running: 'live',
+  initializing: 'live',
   processing: 'live',
+  requestPermission: 'attention',
   waiting: 'attention',
   error: 'failed',
   idle: 'idle',
@@ -11,8 +13,26 @@ const states: Record<string, SessionState> = {
   completed: 'done',
 };
 
-export function sessionState(status: string, archived = false): SessionState {
-  return archived ? 'archived' : (states[status] ?? 'idle');
+export function sessionState(
+  status: string,
+  archived = false,
+  awaiting = false,
+): SessionState {
+  if (archived) return 'archived';
+  const state = states[status] ?? 'idle';
+  return awaiting && state !== 'live' ? 'attention' : state;
+}
+
+const agentNames: Record<string, string> = {
+  claude: 'Claude Code',
+  codex: 'Codex',
+  kimi: 'Kimi Code',
+  'kimi-code': 'Kimi Code',
+  opencode: 'OpenCode',
+};
+
+export function agentName(agentType = '') {
+  return agentNames[agentType] ?? agentType;
 }
 
 export const stateLabel: Record<SessionState, string> = {

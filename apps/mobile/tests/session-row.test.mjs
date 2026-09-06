@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { relativeTime } from '../src/ui/time.ts';
 import {
+  agentName,
   sessionState,
   stateSubtitle,
   stateSymbol,
@@ -25,6 +26,16 @@ test('archived overrides the backend status', () => {
   assert.equal(sessionState('running', true), 'archived');
   assert.equal(sessionState('running'), 'live');
   assert.equal(sessionState('anything-unknown'), 'idle');
+});
+
+test('server status types and the awaiting flag map to list states', () => {
+  assert.equal(sessionState('requestPermission'), 'attention');
+  assert.equal(sessionState('initializing'), 'live');
+  assert.equal(sessionState('idle', false, true), 'attention');
+  assert.equal(sessionState('running', false, true), 'live');
+  assert.equal(relativeTime(now - 3 * 60_000, now), '3 分钟前');
+  assert.equal(agentName('claude'), 'Claude Code');
+  assert.equal(agentName('custom-agent'), 'custom-agent');
 });
 
 test('accent carries only the live state', () => {

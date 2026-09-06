@@ -146,3 +146,29 @@ test('权限作答上传失败时抛 upload_failed，用户重试后再次上传
   );
   close();
 });
+
+test('reopening within one native generation accepts the fresh session', async () => {
+  const { runtime, events, close } = await openTestSession();
+  const before = events.at(-1);
+  const fresh = await new Promise((resolve) => {
+    void runtime.openSession(
+      's1',
+      'w1',
+      async () => ({ token: 'synthetic', gatewayBaseUrl: 'https://x.invalid' }),
+      (event) => {
+        const data = JSON.parse(event.session);
+        if (data.status === 'live') resolve(data);
+      },
+      async () => {},
+    );
+  });
+  assert.equal(
+    acceptEnvelope(
+      { generation: 1, revision: before.revision },
+      { generation: 1 },
+      fresh,
+    ),
+    'accept',
+  );
+  close();
+});

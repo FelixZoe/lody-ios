@@ -28,7 +28,7 @@ try:
  hold(160,607); shot('ai-menu'); tap('复制此块'); time.sleep(1)
  records['code'] = clipboard(); assert records['code'] == code
  hold(160,607); tap('选择此块'); time.sleep(2); shot('whole-selection')
- assert any(n.get('AXUniqueId') == 'chat-block-selection' for n in state())
+ assert any(n.get('AXLabel') == 'Copy' for n in state()), 'Native selection menu must be available'
  axe('swipe','--start-x','40','--start-y','676','--end-x','294','--end-y','601','--duration','1','--delta','2'); time.sleep(1)
  shot('partial-selection')
  axe('tap','--label','Copy','--element-type','GenericElement'); time.sleep(.5)

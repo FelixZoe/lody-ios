@@ -9,3 +9,6 @@ apps/mobile/ios/
 apps/mobile/android/
 apps/mobile/modules/lody-kit/ios/Resources/
 .superpowers/
+
+
+*.pyc

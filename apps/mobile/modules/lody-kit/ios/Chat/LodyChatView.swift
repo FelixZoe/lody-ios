@@ -10,6 +10,10 @@ private final class ChatCell: UICollectionViewCell, UIContextMenuInteractionDele
   var onInteraction: (() -> Void)?
   private var menuRange: NSRange?
   private var pendingSelection: (() -> Void)?
+  override var isAccessibilityElement: Bool {
+    get { !label.isUserInteractionEnabled && super.isAccessibilityElement }
+    set { super.isAccessibilityElement = newValue }
+  }
   override init(frame: CGRect) {
     super.init(frame: frame)
     bubble.backgroundColor = .secondarySystemBackground
@@ -749,6 +753,11 @@ final class LodyChatView: ExpoView, UICollectionViewDelegateFlowLayout, UITextVi
 
   func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
     collectionView.deselectItem(at: indexPath, animated: false)
+    if let cell = collectionView.cellForItem(at: indexPath) as? ChatImageCell, let controller = presenter() {
+      pauseTracking()
+      cell.presentPreview(from: controller)
+      return
+    }
     guard let id = dataSource.itemIdentifier(for: indexPath), let row = rows[id], row.actionable else { return }
     onActivityPress(["entryId": row.entryID, "itemId": row.itemID, "processStartId": row.processStartID])
   }

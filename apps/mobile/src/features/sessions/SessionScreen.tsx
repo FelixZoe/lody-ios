@@ -43,6 +43,8 @@ function SessionScreen() {
     );
   const { snapshot, overflow, cursor, reconnect } = useSessionRuntime(
     session.id,
+    account?.user.id ?? '',
+    selected?.id ?? '',
   );
   const [clearDraftToken, setClearDraftToken] = useState(0),
     [restoreDraftToken, setRestoreDraftToken] = useState(0),
@@ -69,7 +71,7 @@ function SessionScreen() {
     });
 
   useEffect(() => {
-    if (!snapshot.awaitingUserSince) return;
+    if (snapshot.status !== 'live' || !snapshot.awaitingUserSince) return;
     for (const entry of snapshot.entries) {
       const item = pendingPermission(entry);
       const requestId = item?.permission?.requestId;
@@ -88,6 +90,10 @@ function SessionScreen() {
   }, [snapshot.status, initialDraft]);
 
   const onActivityPress = (entryId: string, itemId: string) => {
+    if (snapshot.status !== 'live') {
+      Alert.alert('正在同步', '对话已保存在本地，详细活动将在连接恢复后可用。');
+      return;
+    }
     const entry = snapshot.entries.find((e) => e.id === entryId);
     const item = entry?.items.find((i) => i.itemId === itemId);
     if (!entry || !item) return;

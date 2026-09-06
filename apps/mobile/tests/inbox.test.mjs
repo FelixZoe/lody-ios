@@ -155,12 +155,56 @@ test('projects default to expanded, honor saved collapse, and show More only bey
       Array.from({ length: Math.min(count, 5) }, (_, i) => `s${count - i - 1}`),
     );
     if (count > 5) assert.equal(group.rows.at(-1).id, 'project:p1');
-    if (!count) assert.equal(group.footer, '暂无会话');
-    assert.equal(
-      projectSections(data, ACCENT, { p1: false })[0].rows.length,
-      0,
-    );
+    assert.equal(group.footer, undefined);
+    assert.equal(group.headerValue, undefined);
+    const [collapsed] = projectSections(data, ACCENT, { p1: false });
+    assert.equal(collapsed.rows.length, 0);
+    assert.equal(collapsed.headerValue, String(count));
   }
+});
+
+test('project rows carry branch or agent, diff, activity time, unread and a badge', async () => {
+  const { projectSections, sessionRow } =
+    await import('../src/features/sessions/inbox.ts');
+  const at = (iso) => Date.parse(iso);
+  const data = catalog([
+    session('quiet', 'idle', {
+      agentType: 'claude',
+      lastMessageAt: at('2026-09-06T14:30:00+08:00'),
+      lastReadAt: at('2026-09-06T14:30:00+08:00'),
+    }),
+    session('busy', 'idle', {
+      branchName: 'feat/map',
+      diff: { add: 42, del: 7 },
+      awaitingUserSince: at('2026-09-06T14:50:00+08:00'),
+      lastMessageAt: at('2026-09-06T14:50:00+08:00'),
+      lastReadAt: at('2026-09-06T14:00:00+08:00'),
+    }),
+  ]);
+  const [group] = projectSections(data, ACCENT, {}, now);
+  assert.deepEqual(
+    group.rows.map((r) => r.id),
+    ['busy', 'quiet'],
+  );
+  const [busy, quiet] = group.rows;
+  assert.equal(busy.subtitle, 'feat/map');
+  assert.equal(busy.subtitleMono, true);
+  assert.deepEqual(busy.diff, { add: 42, del: 7 });
+  assert.equal(busy.value, '10 分钟前');
+  assert.equal(busy.unread, true);
+  assert.equal(busy.badge, '等你确认');
+  assert.equal(busy.image, 'circle.fill');
+  assert.equal(busy.imageTint, 'warning');
+  assert.equal(busy.disclosure, false);
+  assert.equal(quiet.subtitle, 'Claude Code');
+  assert.equal(quiet.subtitleMono, false);
+  assert.equal(quiet.unread, false);
+  assert.equal(quiet.badge, undefined);
+  assert.equal(quiet.image, undefined);
+  assert.equal(
+    sessionRow(data.sessions[0], ACCENT, 'lody-ios', now).subtitle,
+    'lody-ios · Claude Code',
+  );
 });
 
 test('search finds empty projects and archived sessions without the inbox limit', async () => {
@@ -178,5 +222,5 @@ test('search finds empty projects and archived sessions without the inbox limit'
   const found = searchSections(data, ' LODY ', ACCENT);
   assert.equal(found[0].rows.length, 2);
   assert.equal(found[1].rows.length, 25);
-  assert.match(found[1].rows[0].subtitle, /已归档/);
+  assert.equal(found[1].rows[0].badge, '已归档');
 });

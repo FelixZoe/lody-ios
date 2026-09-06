@@ -1,8 +1,8 @@
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 
-export function relativeTime(value: string, now = Date.now()) {
-  const parsed = Date.parse(value);
+export function relativeTime(value: string | number, now = Date.now()) {
+  const parsed = typeof value === 'number' ? value : Date.parse(value);
   if (Number.isNaN(parsed)) return '';
   const elapsed = now - parsed;
   if (elapsed < MINUTE) return '刚刚';

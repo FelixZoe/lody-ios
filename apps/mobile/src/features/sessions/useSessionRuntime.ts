@@ -5,6 +5,8 @@ import {
   unwatchSession,
 } from '@lody-ios/kit';
 import { acceptEnvelope } from './acceptEnvelope';
+import { localGeneration, readLocal, writeLocal } from '../../cloud/local';
+import { showToast } from '../../ui/toast';
 import type { EntrySummary, Envelope, ItemSummary } from './transcript/types';
 
 export type Snapshot = Omit<Envelope, 'v'>;
@@ -21,7 +23,12 @@ export function pendingPermission(entry: EntrySummary, requestId?: string) {
   return undefined;
 }
 
-export function useSessionRuntime(sessionId: string) {
+export function useSessionRuntime(
+  sessionId: string,
+  userId: string,
+  workspaceId: string,
+) {
+  const key = `session:${JSON.stringify([userId, workspaceId, sessionId])}`;
   const [snapshot, setSnapshot] = useState<Snapshot>({
     status: 'syncing',
     revision: -1,
@@ -34,7 +41,28 @@ export function useSessionRuntime(sessionId: string) {
       setSnapshot((old) => ({ ...old, status: 'offline' })),
     );
   useEffect(() => {
+    let active = true;
+    let received = false;
+    let saveErrorShown = false;
+    const localVersion = localGeneration();
+    cursor.current = { generation: -1, revision: -1 };
+    setSnapshot({ status: 'syncing', revision: -1, entries: [] });
+    setOverflow(false);
+    if (!userId || !workspaceId) return;
+    void readLocal<Envelope>(key).then((saved) => {
+      if (
+        !active ||
+        received ||
+        localVersion !== localGeneration() ||
+        saved?.v !== 1 ||
+        !Array.isArray(saved.entries)
+      )
+        return;
+      // Cached revisions belong to an earlier replica, never the live cursor.
+      setSnapshot((old) => ({ ...saved, status: old.status }));
+    });
     const subscription = addDataRuntimeListener((event) => {
+      if (!active || localVersion !== localGeneration()) return;
       if (event.sessionId === sessionId && event.session) {
         try {
           const data = JSON.parse(event.session);
@@ -49,7 +77,19 @@ export function useSessionRuntime(sessionId: string) {
             revision: data.revision,
           };
           setOverflow(false);
-          setSnapshot(data);
+          if (data.status === 'live') {
+            received = true;
+            setSnapshot(data);
+            void writeLocal(key, data, localVersion).catch(() => {
+              if (active && !saveErrorShown) {
+                saveErrorShown = true;
+                showToast('对话未能保存到本地，下次打开需要重新同步');
+              }
+            });
+          } else {
+            // Bootstrap/recovery can emit an empty or partial replica.
+            setSnapshot((old) => ({ ...old, status: data.status }));
+          }
         } catch {
           setSnapshot((old) => ({ ...old, status: 'offline' }));
         }
@@ -61,9 +101,10 @@ export function useSessionRuntime(sessionId: string) {
     });
     reconnect();
     return () => {
+      active = false;
       subscription.remove();
       void unwatchSession(sessionId);
     };
-  }, [sessionId]);
+  }, [key]);
   return { snapshot, overflow, cursor, reconnect };
 }

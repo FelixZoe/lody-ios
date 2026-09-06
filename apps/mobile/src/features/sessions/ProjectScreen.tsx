@@ -3,7 +3,7 @@ import { NativeGroupedList } from '@lody-ios/kit';
 import { definePage, usePageRuntime } from '@/presentation';
 import { useCatalog } from '@/cloud/CatalogProvider';
 import { usePalette } from '@/theme/palette';
-import { sessionRow } from './inbox';
+import { activityAt, sessionRow } from './inbox';
 import { newSession, openCatalogRow } from './navigation';
 
 function ProjectScreen() {
@@ -15,7 +15,7 @@ function ProjectScreen() {
   const project = catalog.projects.find((p) => p.id === projectId);
   const sessions = catalog.sessions
     .filter((s) => s.projectId === projectId)
-    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+    .sort((a, b) => activityAt(b) - activityAt(a));
   const sections = [false, true]
     .map((archived) => ({
       id: archived ? 'archived' : 'sessions',
@@ -44,6 +44,7 @@ function ProjectScreen() {
       <NativeGroupedList
         style={{ flex: 1 }}
         accent={colors.accent}
+        contentStyle
         sections={sections}
         refreshing={loading}
         onRefresh={refresh}

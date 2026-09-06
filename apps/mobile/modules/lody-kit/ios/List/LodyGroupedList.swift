@@ -9,6 +9,9 @@ struct LodyListRow: Record {
   @Field var image: String = ""
   @Field var imageTint: String = ""
   @Field var subtitleMono: Bool = false
+  @Field var unread: Bool = false
+  @Field var badge: String = ""
+  @Field var diff: [String: Int] = [:]
   @Field var action: Bool = false
   @Field var navigates: Bool = false
   @Field var disclosure: Bool = false
@@ -90,7 +93,8 @@ final class LodyGroupedList: ExpoView, UICollectionViewDelegate, UISearchBarDele
     let accent = LodyGroupedList.accent
     var content = UIListContentConfiguration.subtitleCell()
     content.text = row.title
-    content.secondaryText = row.subtitle.isEmpty ? nil : row.subtitle
+    let subtitle = [row.subtitle, row.badge].filter { !$0.isEmpty }.joined(separator: " · ")
+    content.secondaryText = subtitle.isEmpty ? nil : subtitle
     content.textProperties.numberOfLines = 0
     content.secondaryTextProperties.numberOfLines = 1
     if row.subtitleMono {
@@ -436,7 +440,11 @@ final class LodyGroupedList: ExpoView, UICollectionViewDelegate, UISearchBarDele
     cell.configurationUpdateHandler = nil
     cell.automaticallyUpdatesBackgroundConfiguration = true
     if contentStyle {
-      if var content = cell.contentConfiguration as? UIListContentConfiguration {
+      if !row.value.isEmpty || !row.badge.isEmpty {
+        let dot = row.image.isEmpty ? nil : (lodyTint(row.imageTint) ?? LodyGroupedList.accent)
+        cell.contentConfiguration = LodySessionRowContent(row: row, dot: dot, live: dot != nil && row.imageTint.hasPrefix("#"))
+        cell.accessories = row.disclosure ? [.disclosureIndicator()] : []
+      } else if var content = cell.contentConfiguration as? UIListContentConfiguration {
         content.textProperties.numberOfLines = 2
         content.secondaryTextProperties.font = .preferredFont(forTextStyle: .footnote)
         content.directionalLayoutMargins = .init(top: 12, leading: 22, bottom: 12, trailing: 22)
@@ -503,7 +511,7 @@ final class LodyGroupedList: ExpoView, UICollectionViewDelegate, UISearchBarDele
         content.text = nil
         content.attributedText = title
         content.directionalLayoutMargins.top = 14
-        content.directionalLayoutMargins.bottom = 14
+        content.directionalLayoutMargins.bottom = section.rows.isEmpty ? 4 : 14
       }
     }
     if header && !section.headerActionId.isEmpty {

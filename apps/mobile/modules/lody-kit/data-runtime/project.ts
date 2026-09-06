@@ -71,7 +71,7 @@ function bump(key: string, fingerprint: string) {
 }
 
 export function resetProjection() {
-  revision = 0;
+  // Reopening a session keeps the native generation; revisions must stay monotonic.
   revs.clear();
   entryCache.clear();
 }

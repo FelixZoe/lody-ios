@@ -15,6 +15,11 @@ export type Session = {
   archived: boolean;
   projectId: string;
   createdAt: string;
+  lastMessageAt?: number;
+  lastReadAt?: number;
+  awaitingUserSince?: number;
+  branchName?: string;
+  diff?: { add: number; del: number };
 };
 export type Catalog = {
   projects: Project[];
@@ -28,6 +33,14 @@ const object = (value: unknown): Record<string, unknown> =>
     : {};
 const text = (value: unknown): string =>
   typeof value === 'string' ? value : '';
+const stamp = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+const diffOf = (value: unknown) => {
+  const change = object(object(value).allChange);
+  const add = stamp(change.add) ?? 0,
+    del = stamp(change.del) ?? 0;
+  return add || del ? { add, del } : undefined;
+};
 export function projectRows(rows: Row[], mode: string): Catalog {
   const projects: Project[] = [],
     sessions: Session[] = [],
@@ -103,6 +116,11 @@ export function projectRows(rows: Row[], mode: string): Catalog {
       archived: value.isArchived === true,
       projectId,
       createdAt: text(value.createdAt),
+      lastMessageAt: stamp(value.lastMessageAt),
+      lastReadAt: stamp(value.lastReadAt),
+      awaitingUserSince: stamp(value.awaitingUserSince),
+      branchName: text(value.branchName) || undefined,
+      diff: diffOf(value.diffStats),
     });
     projects.push({
       id: projectId,

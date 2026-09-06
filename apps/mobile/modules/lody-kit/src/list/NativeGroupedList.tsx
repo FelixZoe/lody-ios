@@ -9,6 +9,10 @@ export type NativeListRow = {
   /** Paths, branches and ids read as data, not prose. */
   subtitleMono?: boolean;
   value?: string;
+  /** Session rows only: bold title, trailing pill, +N −N after the subtitle. */
+  unread?: boolean;
+  badge?: string;
+  diff?: { add: number; del: number };
   image?: string;
   /** Semantic name (warning/danger/secondary/tertiary) or a `#RRGGBB` value. */
   imageTint?: string;

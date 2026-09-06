@@ -1,11 +1,12 @@
 import type { NativeListSection } from '@lody-ios/kit';
 import type { Catalog, Session } from '@/cloud/model';
+import type { SessionState } from '../../ui/status.ts';
 // Relative on purpose: this module is imported directly by node --test, which
 // does not resolve the `@/` alias. Keep it free of aliased value imports.
 import {
+  agentName,
   sessionState,
   stateSubtitle,
-  stateLabel,
   stateSymbol,
   stateTint,
 } from '../../ui/status.ts';
@@ -18,6 +19,15 @@ const groups = [
 ] as const;
 
 export const RECENT_LIMIT = 20;
+
+export const activityAt = (session: Session) =>
+  session.lastMessageAt ?? Date.parse(session.createdAt);
+const byActivity = (a: Session, b: Session) => activityAt(b) - activityAt(a);
+const badges: Partial<Record<SessionState, string>> = {
+  attention: '等你确认',
+  failed: '执行失败',
+  archived: '已归档',
+};
 
 export type InboxOptions = {
   keyword?: string;
@@ -41,7 +51,7 @@ export function inboxSections(
   const visible = catalog.sessions
     .filter((session) => (session.archived ? term.length > 0 : true))
     .filter(matches)
-    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+    .sort(byActivity);
 
   return groups.flatMap((group) => {
     const rows = visible
@@ -59,7 +69,7 @@ export function inboxSections(
           subtitle: stateSubtitle(
             state,
             names.get(session.projectId) ?? '',
-            relativeTime(session.createdAt, now),
+            relativeTime(activityAt(session), now),
           ),
           image: stateSymbol[state],
           imageTint: stateTint(state, accent),
@@ -72,17 +82,33 @@ export function inboxSections(
   });
 }
 
-export function sessionRow(session: Session, accent: string, projectName = '') {
-  const state = sessionState(session.status, session.archived);
+export function sessionRow(
+  session: Session,
+  accent: string,
+  projectName = '',
+  now?: number,
+) {
+  const state = sessionState(
+    session.status,
+    session.archived,
+    session.awaitingUserSince !== undefined,
+  );
+  const lead = session.branchName ?? agentName(session.agentType);
   return {
     id: session.id,
     title: session.title,
-    subtitle: stateSubtitle(
-      state,
-      projectName,
-      relativeTime(session.createdAt),
-    ),
-    image: stateSymbol[state],
+    subtitle: [projectName, lead].filter(Boolean).join(' · '),
+    subtitleMono: session.branchName !== undefined,
+    diff: session.diff,
+    value: relativeTime(activityAt(session), now),
+    unread:
+      session.lastMessageAt !== undefined &&
+      (session.lastReadAt === undefined ||
+        session.lastMessageAt > session.lastReadAt),
+    badge: badges[state],
+    image: ['live', 'attention', 'failed'].includes(state)
+      ? 'circle.fill'
+      : undefined,
     imageTint: stateTint(state, accent),
     action: true,
     disclosure: true,
@@ -94,49 +120,38 @@ export function projectSections(
   catalog: Catalog,
   accent: string,
   expanded: Record<string, boolean> = {},
+  now?: number,
 ): NativeListSection[] {
   return catalog.projects.map((project) => {
     const sessions = catalog.sessions
       .filter((s) => s.projectId === project.id && !s.archived)
-      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+      .sort(byActivity);
+    const open = expanded[project.id] ?? true;
     return {
       id: project.id,
       header: project.name,
-      headerValue: String(sessions.length),
+      headerValue: open ? undefined : String(sessions.length),
       headerActionId: `toggle:${project.id}`,
-      headerExpanded: expanded[project.id] ?? true,
-      footer:
-        (expanded[project.id] ?? true) && !sessions.length
-          ? '暂无会话'
-          : undefined,
-      rows:
-        expanded[project.id] === false
-          ? []
-          : [
-              ...sessions.slice(0, 5).map((session) => {
-                const state = sessionState(session.status);
-                return {
-                  ...sessionRow(session, accent),
-                  subtitle: stateLabel[state],
-                  value: relativeTime(session.createdAt),
-                  image: ['attention', 'failed'].includes(state)
-                    ? stateSymbol[state]
-                    : undefined,
-                  disclosure: false,
-                };
-              }),
-              ...(sessions.length > 5
-                ? [
-                    {
-                      id: `project:${project.id}`,
-                      title: '更多',
-                      action: true,
-                      disclosure: true,
-                      navigates: true,
-                    },
-                  ]
-                : []),
-            ],
+      headerExpanded: open,
+      rows: open
+        ? [
+            ...sessions.slice(0, 5).map((session) => ({
+              ...sessionRow(session, accent, '', now),
+              disclosure: false,
+            })),
+            ...(sessions.length > 5
+              ? [
+                  {
+                    id: `project:${project.id}`,
+                    title: '更多',
+                    action: true,
+                    disclosure: true,
+                    navigates: true,
+                  },
+                ]
+              : []),
+          ]
+        : [],
     };
   });
 }
@@ -158,7 +173,7 @@ export function searchSections(
         .toLocaleLowerCase()
         .includes(term),
     )
-    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+    .sort(byActivity);
   return [
     {
       id: 'projects',
