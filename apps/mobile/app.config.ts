@@ -12,9 +12,20 @@ const config: ExpoConfig = {
   ios: {
     bundleIdentifier: 'app.innei.lody',
     supportsTablet: false,
+    config: { usesNonExemptEncryption: false },
   },
   plugins: ['expo-router', ['expo-dev-client', { toolsButton: false }]],
   experiments: { typedRoutes: true, reactCompiler: true },
+  runtimeVersion: { policy: 'fingerprint' },
+  updates: {
+    url: 'https://ota.innei.in/manifest',
+    enabled: true,
+    fallbackToCacheTimeout: 0,
+    requestHeaders: {
+      'expo-channel-name': 'production',
+      'expo-app-id': 'lody',
+    },
+  },
 };
 
 export default config;

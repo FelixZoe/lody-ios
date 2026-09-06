@@ -2,7 +2,7 @@
   "name": "@lody-ios/mobile",
   "version": "0.1.0",
   "private": true,
-  "main": "expo-router/entry",
+  "main": "index.js",
   "scripts": {
     "start": "expo start --dev-client",
     "ios": "pnpm native:assets && expo run:ios",
@@ -22,6 +22,7 @@
     "expo-router": "~57.0.8",
     "expo-status-bar": "~57.0.1",
     "expo-system-ui": "~57.0.1",
+    "expo-updates": "~57.0.21",
     "fzstd": "0.1.1",
     "loro-crdt": "1.15.1",
     "punycode": "2.3.1",
