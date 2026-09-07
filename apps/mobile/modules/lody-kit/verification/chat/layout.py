@@ -26,24 +26,33 @@ axe('tap', '--label', 'Retry')
 observations = []
 saw_running = False
 saw_segments = False
-deadline = time.monotonic() + 12
+deadline = time.monotonic() + 45
 while time.monotonic() < deadline:
     items = {item['AXUniqueId']: item for item in rows(json.loads(axe('describe-ui')))}
     saw_running |= any('正在处理' in item.get('AXLabel', '') for item in items.values())
     saw_segments |= 'preview:middle' in items and 'preview:process:thought-two' in items
     answer = items.get('preview:answer')
     summary = items.get('preview:process')
-    if answer and summary and answer.get("AXLabel"):
-        observations.append({'text': answer['AXLabel'], 'frame': answer['frame'],
-                             'summary': summary['AXLabel'], 'summaryFrame': summary['frame']})
+    for item in items.values():
+        if item['AXUniqueId'].startswith('preview:process'):
+            observations.append({'summary': item.get('AXLabel', ''), 'summaryFrame': item['frame']})
+    if answer and '分割线之后的收尾段落' in answer.get('AXLabel', ''):
+        break
     time.sleep(0.15)
 assert saw_running and saw_segments, 'Did not observe the live text/process segments'
+assert answer and '分割线之后的收尾段落' in answer['AXLabel'], 'Conclusion did not finish'
+# Rich Markdown can be taller than the viewport. Bring the completed process
+# entry into view before asserting its state; offscreen cells are not in AX.
+for _ in range(8):
+    items = {item['AXUniqueId']: item for item in rows(json.loads(axe('describe-ui')))}
+    summary = items.get('preview:process')
+    if summary and '执行过程' in summary.get('AXLabel', ''):
+        break
+    axe('swipe', '--start-x', '200', '--start-y', '300', '--end-x', '200', '--end-y', '650', '--duration', '0.5', '--post-delay', '0.4')
+else:
+    raise AssertionError('Completed process entry not found')
 assert 'preview:intro' not in items and 'preview:middle' not in items, 'Completion must fold intermediate prose'
-assert 'preview:answer' in items, 'Completion must preserve the conclusion'
-assert any('执行过程' in item['summary'] for item in observations), 'Did not observe completion'
-# The viewport now eases independently of token/layout updates; a fixed bottom
-# would contradict line-driven tracking. Verify the visible content survives.
-assert observations and 'inline code' in observations[-1]['text']
+observations.append({'summary': summary['AXLabel'], 'summaryFrame': summary['frame']})
 for item in observations:
     assert abs(item['summaryFrame']['height'] - 44) <= 1, item['summaryFrame']
 print(json.dumps({'samples': len(observations), 'nativeTitleAction': True,

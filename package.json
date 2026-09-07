@@ -15,7 +15,9 @@
     "check": "pnpm typecheck && pnpm format:check",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "node --experimental-strip-types --experimental-test-module-mocks --test apps/mobile/tests/*.test.mjs"
+    "test": "node --experimental-strip-types --experimental-test-module-mocks --test apps/mobile/tests/*.test.mjs",
+    "verify:ui": "python3 apps/mobile/verification/ui/run.py",
+    "verify:native": "python3 apps/mobile/verification/native.py"
   },
   "devDependencies": {
     "@babel/core": "7.29.7",

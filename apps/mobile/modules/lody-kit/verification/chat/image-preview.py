@@ -1,4 +1,4 @@
-"""Open a chat with a visible, loaded image; run: python3 image-preview.py UDID OUTPUT_DIR."""
+"""Offline image fixture in Debug chat preview; run through pnpm verify:ui."""
 import json
 from pathlib import Path
 import subprocess
@@ -30,6 +30,7 @@ height = items[0]['frame']['height']
 source = next(item for item in items if (item.get('AXLabel') or '').startswith('图片，')
               and item['frame']['y'] > 100 and item['frame']['y'] + item['frame']['height'] < height - 110)
 source_id = source['AXUniqueId']
+assert source_id == 'preview-image:user', 'Use the offline image fixture'
 name = source['AXLabel'].removeprefix('图片，')
 axe('tap', '--id', source_id, '--post-delay', '1')
 assert any(item.get('AXLabel') == '关闭图片预览' for item in elements()), 'Image must open the lightbox'

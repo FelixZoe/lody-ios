@@ -46,6 +46,17 @@ final class ChatImageCell: UICollectionViewCell {
     accessibilityIdentifier = row.id
     accessibilityLabel = "图片，\(image.fileName)"
     setNeedsLayout()
+    #if DEBUG
+    if ProcessInfo.processInfo.arguments.contains("--ui-verify"), image.id == "ui-verify-image" {
+      task?.cancel(); task = nil; requestURL = nil; requestID = UUID()
+      photo.image = UIGraphicsImageRenderer(size: CGSize(width: 600, height: 400)).image { context in
+        UIColor.systemBlue.setFill(); context.fill(CGRect(x: 0, y: 0, width: 600, height: 400))
+        UIColor.white.setFill(); context.fill(CGRect(x: 100, y: 100, width: 400, height: 200))
+      }
+      spinner.stopAnimating(); failure.isHidden = true
+      return
+    }
+    #endif
     guard !workspace.isEmpty, !session.isEmpty, !image.id.isEmpty else {
       task?.cancel(); task = nil; requestURL = nil; requestID = UUID()
       photo.image = nil; spinner.stopAnimating(); failure.isHidden = false
@@ -80,6 +91,15 @@ final class ChatImageCell: UICollectionViewCell {
   }
 
   func presentPreview(from controller: UIViewController) {
+    #if DEBUG
+    if ProcessInfo.processInfo.arguments.contains("--ui-verify"), let image, image.id == "ui-verify-image",
+       controller.presentedViewController == nil {
+      let preview = ChatImagePreview(image: photo.image, name: image.fileName, url: nil)
+      if #available(iOS 18.0, *) { preview.preferredTransition = .zoom { [weak self] _ in self?.photo } }
+      controller.present(preview, animated: true)
+      return
+    }
+    #endif
     guard let image, let requestURL, controller.presentedViewController == nil else { return }
     var components = URLComponents(url: requestURL, resolvingAgainstBaseURL: false)!
     components.queryItems = [URLQueryItem(name: "width", value: "2048"), URLQueryItem(name: "fit", value: "scale-down"), URLQueryItem(name: "quality", value: "95")]
@@ -109,11 +129,11 @@ final class ChatImagePreview: UIViewController, UIScrollViewDelegate {
   private let photo = UIImageView()
   private let spinner = UIActivityIndicatorView(style: .large)
   private let retry = UIButton(type: .system)
-  private let url: URL
+  private let url: URL?
   private var task: URLSessionDataTask?
   private var viewport = CGSize.zero
 
-  init(image: UIImage?, name: String, url: URL) {
+  init(image: UIImage?, name: String, url: URL?) {
     self.url = url
     super.init(nibName: nil, bundle: nil)
     photo.image = image
@@ -191,6 +211,7 @@ final class ChatImagePreview: UIViewController, UIScrollViewDelegate {
 
   private func loadImage() {
     retry.isHidden = true
+    guard let url else { return }
     guard let token = try? AuthKeychain.read() else { retry.isHidden = false; return }
     var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
     request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")

@@ -10,6 +10,12 @@ Use `pnpm start` for Metro, `pnpm ios` for the signed simulator app. Check liste
 
 ## 3. Auth
 
+UI regression baselines use `pnpm verify:ui --udid <disposable-simulator> --app <Debug.app>`.
+The runner owns an isolated Metro with `EXPO_PUBLIC_UI_VERIFY=1`; account restoration
+and login are disabled, and Debug scenes use production components with local fixtures.
+No account, cloud credentials or connected machine is needed. See
+`apps/mobile/verification/ui/README.md` for cases, evidence and CI setup.
+
 Official Lody Device Flow and simulator Keychain only. Inspect the simulator UI for existing login; never copy desktop credentials. No seeded account is provided. Unauthenticated checks must be reported separately from authenticated flows.
 
 ## 4. Surfaces

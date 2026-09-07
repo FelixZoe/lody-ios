@@ -42,3 +42,10 @@
 - Generate native runtime assets before prebuild/build. Preserve dependency licenses beside generated resources. Native watchdog behavior has a deterministic Swift check in `modules/lody-kit/verification/watchdog`.
 
 - `ChatComposerView` in LodyKit owns the shared native input, draft handoff/restore, and model controls. Chat embeds it directly; new-session sheets use `NativeComposer` with native height events. The native host measures keyboard overlap in window coordinates; do not wrap it in React Native keyboard avoidance (sheet-local coordinates undercount the overlap). The sheet host reserves bottom safe-area clearance. New-session drafts carry text and attachments together into the first turn, including native restoration when upload fails.
+
+## UI regression verification
+
+- UI baselines must run without login, user credentials, cloud access, or a connected machine. Add independently resettable Debug scenes using production components and `present`; inject deterministic data/service outcomes at their boundary.
+- UI changes must add/update a behavior check in `apps/mobile/verification/ui` or reuse the existing native checks. Shared controls must be exercised in each affected host.
+- Run `pnpm verify:ui --udid <disposable-simulator> --app <Debug.app>` for affected scenes, and `pnpm verify:native --udid <id>` for native behavior. See `apps/mobile/verification/ui/README.md` for setup and coverage limits.
+- Capture screenshots for visual states and video for temporal behavior. Missing scenes/timeouts fail verification; screenshots alone do not establish visual correctness.

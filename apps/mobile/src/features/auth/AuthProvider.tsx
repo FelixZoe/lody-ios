@@ -1,3 +1,4 @@
+import { uiVerify } from '@/features/debug/uiVerify';
 import {
   createContext,
   useContext,
@@ -76,6 +77,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
   };
   async function restore() {
     const signal = begin();
+    if (uiVerify) {
+      update(signal, { busy: false, localReady: true });
+      return;
+    }
     update(signal, { busy: true, error: null });
     try {
       const localStarted = performance.now();
@@ -132,6 +137,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
   }
   async function login() {
+    if (uiVerify)
+      throw new Error('Login is disabled during offline UI verification');
     const signal = begin();
     update(signal, { busy: true, code: null, error: null });
     try {

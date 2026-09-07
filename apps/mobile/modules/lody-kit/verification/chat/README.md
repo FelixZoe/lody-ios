@@ -43,7 +43,6 @@ xcrun --sdk iphonesimulator swiftc -target arm64-apple-ios18.0-simulator \
   -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
   apps/mobile/modules/lody-kit/ios/Chat/ChatTextFade.swift \
   apps/mobile/modules/lody-kit/ios/Chat/ChatTextView.swift \
-  apps/mobile/modules/lody-kit/ios/Chat/ChatMarkdown.swift \
   apps/mobile/modules/lody-kit/ios/UIFont+Dynamic.swift \
   apps/mobile/modules/lody-kit/verification/chat-render/main.swift \
   -o /tmp/lody-chat-render-test
@@ -93,11 +92,8 @@ returning during streaming and after completion, button dismissal at the tail,
 and unchanged history position while tracking is released. Reduce Motion uses
 a short crossfade for completion instead of moving rows.
 
-Composer acceptance (sends a real turn; use a disposable test session): prepare
-text plus a synthetic attachment, then run
-`python3 apps/mobile/modules/lody-kit/verification/chat/composer.py SIMULATOR_UDID --expect success --output /tmp/lody-composer-success`.
-It checks immediate draft clearing, disabled loading button, no sending notice,
-and one message after a double tap. For failure restoration, select a dedicated
-test attachment and make only that temporary picker copy empty before running
-with `--expect failure`. It checks the exact text and attachment are restored and
-retry is enabled. Do not modify user-owned attachments to inject this failure.
+Offline composer, image and chat baselines now run through `pnpm verify:ui`.
+See [the shared runner](../../../../verification/ui/README.md) for clean Simulator
+setup, individual cases, artifacts and CI. No baseline requires a live session.
+The standalone chat-render executable covers the production status label;
+Markdown and selection no longer use the retired ChatMarkdown implementation.

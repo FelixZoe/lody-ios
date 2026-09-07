@@ -1,3 +1,4 @@
+import { uiVerify } from './uiVerify';
 import { Stack } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Alert } from 'react-native';
@@ -26,6 +27,7 @@ const history = Array.from({ length: 80 }, (_, index) => ({
 const totalLength = answer.length + 240;
 
 function ChatPreview() {
+  const [showImage, setShowImage] = useState(false);
   const [length, setLength] = useState(totalLength);
   const [step, setStep] = useState(48);
   const [mode, setMode] = useState<'normal' | 'attention'>('normal');
@@ -44,7 +46,29 @@ function ChatPreview() {
     return () => clearInterval(timer);
   }, [length < totalLength, step]);
   const entriesJSON = JSON.stringify([
-    ...history,
+    ...(showImage
+      ? [
+          {
+            id: 'preview-image',
+            role: 'user',
+            status: 'completed',
+            finished: true,
+            items: [
+              {
+                itemId: 'photo',
+                type: 'image',
+                image: {
+                  id: 'ui-verify-image',
+                  fileName: 'fixture.png',
+                  width: 600,
+                  height: 400,
+                },
+              },
+              { itemId: 'caption', type: 'text', text: '离线图片验收' },
+            ],
+          },
+        ]
+      : history),
     ...(sent
       ? [
           {
@@ -145,10 +169,18 @@ function ChatPreview() {
   return (
     <>
       <Stack.Toolbar placement="right">
+        {uiVerify && (
+          <Stack.Toolbar.Button
+            accessibilityLabel="Image Fixture"
+            icon="photo"
+            onPress={() => setShowImage(true)}
+          />
+        )}
         <Stack.Toolbar.Button
           accessibilityLabel="Fast Replay"
           icon="forward.end"
           onPress={() => {
+            setShowImage(false);
             setStep(240);
             setMode('normal');
             setLength(0);
@@ -158,6 +190,7 @@ function ChatPreview() {
           accessibilityLabel="Retry"
           icon="arrow.trianglehead.clockwise.rotate.90"
           onPress={() => {
+            setShowImage(false);
             setStep(48);
             setMode('normal');
             setLength(0);
@@ -169,7 +202,11 @@ function ChatPreview() {
         navigationSubtitle="lody-ios"
         onTitlePress={() => Alert.alert('会话详情', '原生 titleView 点击正常')}
         style={{ flex: 1 }}
-        entriesJSON={entriesJSON}
+        entriesJSON={
+          showImage
+            ? JSON.stringify(JSON.parse(entriesJSON).slice(0, 1))
+            : entriesJSON
+        }
         composerJSON={JSON.stringify({
           editable: true,
           canSend: true,

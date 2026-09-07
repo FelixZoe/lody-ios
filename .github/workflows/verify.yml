@@ -1,0 +1,95 @@
+name: Verify
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm test
+      - run: pnpm bundle
+
+  ui:
+    name: Offline iOS UI
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      EXPO_PUBLIC_UI_VERIFY: '1'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.5'
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          working-directory: apps/mobile
+          bundler-cache: true
+      - run: pnpm install --frozen-lockfile
+      - name: Install pinned AXe
+        run: |
+          mkdir -p "$RUNNER_TEMP/axe"
+          curl -fL --retry 3 https://github.com/cameroncooke/AXe/releases/download/v1.8.0/AXe-macOS-v1.8.0-universal.tar.gz -o "$RUNNER_TEMP/axe.tar.gz"
+          echo "7b76340b72e90d0f211bc7c4636f15009076eff07acef2f2b632b175debd8834  $RUNNER_TEMP/axe.tar.gz" | shasum -a 256 -c -
+          tar -xzf "$RUNNER_TEMP/axe.tar.gz" -C "$RUNNER_TEMP/axe"
+          echo "$RUNNER_TEMP/axe" >> "$GITHUB_PATH"
+      - name: Generate native project and install Pods
+        working-directory: apps/mobile
+        run: |
+          pnpm prebuild
+          cd ios
+          bundle exec pod install
+      - name: Create clean Simulator
+        run: |
+          udid="$(xcrun simctl create 'Lody Offline UI' com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro com.apple.CoreSimulator.SimRuntime.iOS-26-5)"
+          echo "UI_UDID=$udid" >> "$GITHUB_ENV"
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+      - name: Native behavior checks
+        run: pnpm verify:native --udid "$UI_UDID"
+      - name: Build signed Simulator app
+        run: |
+          mkdir -p .artifacts/ui
+          set -o pipefail
+          xcodebuild -workspace apps/mobile/ios/Lody.xcworkspace -scheme Lody \
+            -configuration Debug -sdk iphonesimulator -destination "id=$UI_UDID" \
+            -derivedDataPath "$RUNNER_TEMP/lody-build" build 2>&1 | tee .artifacts/ui/build.log
+      - name: Offline UI baselines (light and dark)
+        run: pnpm verify:ui --udid "$UI_UDID" --app "$RUNNER_TEMP/lody-build/Build/Products/Debug-iphonesimulator/Lody.app"
+      - name: Upload verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-ui-${{ github.sha }}
+          path: .artifacts/ui
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Remove owned Simulator
+        if: always() && env.UI_UDID != ''
+        run: |
+          xcrun simctl shutdown "$UI_UDID" || true
+          xcrun simctl delete "$UI_UDID"

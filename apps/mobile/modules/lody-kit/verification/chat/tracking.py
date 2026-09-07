@@ -47,8 +47,15 @@ screenshot('tracking-resumed')
 print(json.dumps({'historyDrift': drift, 'returnedToTail': True}))
 
 axe('tap', '--label', 'Fast Replay')
-time.sleep(3.5)
-completed = snapshot()['preview:answer']
+deadline = time.monotonic() + 30
+while time.monotonic() < deadline:
+    current = snapshot()
+    completed = current.get('preview:answer', {})
+    if '分割线之后的收尾段落' in completed.get('AXLabel', ''):
+        break
+    time.sleep(.2)
+else:
+    raise AssertionError('Fast replay did not finish')
 assert '清晰可读' in completed['AXLabel'], 'Fast output must finish visibly'
 screenshot('fast-completed')
 axe('swipe', '--start-x', '200', '--start-y', '400', '--end-x', '200', '--end-y', '460', '--duration', '0.8')

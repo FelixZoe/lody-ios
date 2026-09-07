@@ -1,3 +1,5 @@
+import { uiVerify } from './uiVerify';
+import { composerPreviewPage } from './ComposerPreview';
 import { chatPreviewPage } from './ChatPreview';
 import { shinePreviewPage } from './ShinePreview';
 import { Link, useTheme } from 'expo-router';
@@ -24,6 +26,7 @@ import { Button } from '@/ui/Button';
 export default function DebugScreen() {
   const [runtime, setRuntime] = useState('正在读取');
   useEffect(() => {
+    if (uiVerify) return;
     const update = (event: Awaited<ReturnType<typeof dataRuntimeStatus>>) =>
       setRuntime(
         JSON.stringify(
@@ -70,6 +73,44 @@ export default function DebugScreen() {
     );
   return (
     <Screen>
+      {uiVerify && (
+        <Text testID="ui-verify-ready">Offline UI verification</Text>
+      )}
+      <Button
+        testID="composer-preview"
+        onPress={() =>
+          void present(composerPreviewPage, {
+            host: 'sheet',
+            outcome: 'failure',
+          })
+        }
+      >
+        输入框验收
+      </Button>
+      <Button
+        testID="composer-success"
+        onPress={() =>
+          void present(
+            composerPreviewPage,
+            { host: 'chat', outcome: 'success' },
+            { style: 'push' },
+          )
+        }
+      >
+        聊天输入成功
+      </Button>
+      <Button
+        testID="composer-failure"
+        onPress={() =>
+          void present(
+            composerPreviewPage,
+            { host: 'chat', outcome: 'failure' },
+            { style: 'push' },
+          )
+        }
+      >
+        聊天输入恢复
+      </Button>
       <Button
         testID="chat-preview"
         onPress={() => void present(chatPreviewPage, {})}

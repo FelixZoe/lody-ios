@@ -8,3 +8,4 @@ apps/mobile/expo-env.d.ts
 
 .acceptances/
 apps/mobile/vendor
+.artifacts/
