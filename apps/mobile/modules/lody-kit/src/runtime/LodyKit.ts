@@ -45,7 +45,7 @@ declare class LodyKitNativeModule extends NativeModule<Events> {
   sendSessionTurn(payload: string): Promise<string>;
   sessionItemDetail(payload: string): Promise<string>;
   respondSessionPermission(payload: string): Promise<string>;
-  watchCatalog(workspace: string, owner: string): Promise<void>;
+  watchCatalog(workspace: string, owner: string, userId: string): Promise<void>;
   unwatchCatalog(owner: string): Promise<void>;
   dataRuntimeStatus(): Promise<DataRuntimeEvent>;
   debugHangDataRuntime(): Promise<void>;
@@ -91,8 +91,11 @@ export const decodeFlock = (
   mode: string,
 ) => native.decodeFlock(snapshot, updates, mode);
 
-export const watchCatalog = (workspace: string, owner: string) =>
-  native.watchCatalog(workspace, owner);
+export const watchCatalog = (
+  workspace: string,
+  owner: string,
+  userId: string,
+) => native.watchCatalog(workspace, owner, userId);
 export const unwatchCatalog = (owner: string) => native.unwatchCatalog(owner);
 export const addDataRuntimeListener = (
   listener: (event: DataRuntimeEvent) => void,

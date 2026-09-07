@@ -87,46 +87,10 @@ struct ChatStream {
   }
 }
 
-/// The scrolling timeline advances only when new laid-out lines arrive.
-/// Reformatting existing Markdown lines cannot move this timeline backwards.
-struct ChatScroll {
-  private(set) var entryID: String?
-  private(set) var target: Double?
-  private var end: Double = 0
-  private var lines: [String: Int] = [:]
+enum ChatScroll {
   static let resumeDistance: Double = 80
 
-  mutating func update(entryID: String, rows: [(String, [Double])], initialEnd: Double,
-                       viewport: Double, minimum: Double) {
-    if self.entryID != entryID {
-      self.entryID = entryID
-      end = initialEnd
-      lines = Dictionary(uniqueKeysWithValues: rows.map { ($0.0, $0.1.count) })
-    } else {
-      var addedLines = false
-      for (id, advances) in rows {
-        let count = lines[id, default: 0]
-        addedLines = addedLines || advances.count > count
-        lines[id] = max(count, advances.count)
-      }
-      // New lines trigger a calibrated position, never an accumulated estimate.
-      if addedLines { end = max(end, initialEnd) }
-    }
-    target = max(minimum, end - viewport)
-  }
-
-  mutating func finish() { self = ChatScroll() }
-
-  func isWithinReach(of offset: Double) -> Bool {
-    guard let target else { return false }
-    return target - offset <= 1
-  }
-
-  func nextOffset(from offset: Double, elapsed: Double, reducedMotion: Bool) -> Double {
-    guard let target else { return offset }
-    if reducedMotion || abs(target - offset) < 0.25 { return target }
-    let distance = abs(target - offset)
-    let response = max(0.025, 0.08 * min(1, 48 / distance))
-    return offset + (target - offset) * (1 - exp(-min(elapsed, 0.05) / response))
+  static func bottom(contentHeight: Double, viewportHeight: Double, topInset: Double, bottomInset: Double) -> Double {
+    max(-topInset, contentHeight - viewportHeight + bottomInset)
   }
 }

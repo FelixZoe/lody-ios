@@ -16,6 +16,7 @@ import { projectRows, type Catalog } from '../../../src/cloud/model';
 import {
   openSession,
   closeSession,
+  retainedSessionIds,
   itemDetail,
   respondPermission,
   sendTurn as sendSessionTurn,
@@ -489,9 +490,23 @@ Object.assign(globalThis, {
       return {};
     },
     session(id: string) {
-      return openSession(id, workspace, getGrant, send, markDispatch);
+      const result = openSession(id, workspace, getGrant, send, markDispatch);
+      send({ type: 'sessionSubscriptions', ids: retainedSessionIds() });
+      return result;
     },
-    closeSession,
+    closeSession() {
+      closeSession();
+      send({ type: 'sessionSubscriptions', ids: retainedSessionIds() });
+    },
+    restoreSessions(ids: string[], current: string | null) {
+      for (const id of ids)
+        if (id !== current)
+          void openSession(id, workspace, getGrant, send, markDispatch);
+      if (current)
+        void openSession(current, workspace, getGrant, send, markDispatch);
+      else closeSession();
+      send({ type: 'sessionSubscriptions', ids: retainedSessionIds() });
+    },
     itemDetail,
     respondPermission,
     sendTurn(args: Parameters<typeof sendSessionTurn>[0]) {

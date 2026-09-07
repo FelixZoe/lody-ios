@@ -6,6 +6,10 @@ import UIKit
 final class DataRuntime: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
   private var webView: WKWebView?
   private var sessionId: String?
+  private var retainedSessions: [String] = []
+  private var userId = ""
+  private let localStore: LocalStore
+  private var cacheErrorShown = false
   private var commands: [UUID: Promise] = [:]
   private var timer: Timer?
   private var attachmentTask: Task<Void, Never>?
@@ -23,7 +27,8 @@ final class DataRuntime: NSObject, WKScriptMessageHandler, WKNavigationDelegate 
   private let emit: ([String: Any]) -> Void
   private var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
 
-  init(emit: @escaping ([String: Any]) -> Void) {
+  init(localStore: LocalStore, emit: @escaping ([String: Any]) -> Void) {
+    self.localStore = localStore
     self.emit = emit
     super.init()
     observers.append(NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
@@ -36,15 +41,16 @@ final class DataRuntime: NSObject, WKScriptMessageHandler, WKNavigationDelegate 
       self.build(reason: "foreground")
     })
   }
-  func start(workspace: String, owner: String) {
-    if self.workspace != workspace { sessionId = nil }
+  func start(workspace: String, owner: String, userId: String) {
+    if self.workspace != workspace || self.userId != userId { sessionId = nil; retainedSessions = [] }
+    self.userId = userId; cacheErrorShown = false
     self.workspace = workspace; self.owner = owner; health = RuntimeHealth()
     if UIApplication.shared.applicationState == .background { disposeView(); publish("background", reason: "paused") }
     else { build(reason: "subscribe") }
   }
   func stop(owner: String? = nil) {
     if let owner, self.owner != owner { return }
-    workspace = nil; sessionId = nil; disposeView(); publish("stopped", reason: "unsubscribe")
+    workspace = nil; sessionId = nil; retainedSessions = []; userId = ""; disposeView(); publish("stopped", reason: "unsubscribe")
   }
   func status() -> [String: Any] {
     ["owner": owner, "generation": generation, "state": phase, "reason": reason, "acknowledgements": acknowledgements, "lastStartReason": lastStartReason]
@@ -112,18 +118,38 @@ final class DataRuntime: NSObject, WKScriptMessageHandler, WKNavigationDelegate 
       view.callAsyncJavaScript("globalThis.dataRuntime.start(workspace)", arguments: ["workspace": workspace], in: nil, in: .page) { [weak self, weak view] result in
         guard let self, let view, self.webView === view else { return }
         if case .failure = result { self.recover("start_failed") }
-        else if let sessionId = self.sessionId { self.openSession(sessionId) }
+        else {
+          view.callAsyncJavaScript("globalThis.dataRuntime.restoreSessions(ids, current)", arguments: ["ids": self.retainedSessions, "current": self.sessionId as Any? ?? NSNull()], in: nil, in: .page, completionHandler: nil)
+        }
       }
     case "diagnostic":
       #if DEBUG
       NSLog("LodyRuntime stage=%@ stream=%@", body["stage"] as? String ?? "", body["stream"] as? String ?? "")
       #endif
-    case "session":
-      guard let id = body["sessionId"] as? String, id == sessionId,
+    case "sessionSubscriptions":
+      if let ids = body["ids"] as? [String] { retainedSessions = ids }
+    case "session", "sessionCache":
+      guard let id = body["sessionId"] as? String,
             let session = body["session"] as? String else { return }
-      let payload = session.utf8.count <= 12 * 1024 * 1024
-        ? session
-        : #"{"v":1,"overflow":true}"#
+      let fits = session.utf8.count <= 12 * 1024 * 1024
+      if fits, body["synced"] as? Bool == true, let workspace, !userId.isEmpty,
+         let keyData = try? JSONSerialization.data(withJSONObject: [userId, workspace, id], options: [.withoutEscapingSlashes]),
+         let suffix = String(data: keyData, encoding: .utf8) {
+        let generation = self.generation
+        LocalStore.queue.async { [weak self] in
+          guard let self else { return }
+          do { try self.localStore.write("session:" + suffix, session) }
+          catch {
+            DispatchQueue.main.async { [weak self] in
+              guard let self, self.generation == generation, self.workspace != nil, !self.cacheErrorShown else { return }
+              self.cacheErrorShown = true
+              self.emit(self.status().merging(["reason": "session_cache_failed"], uniquingKeysWith: { _, new in new }))
+            }
+          }
+        }
+      }
+      guard type == "session", id == sessionId else { return }
+      let payload = fits ? session : #"{"v":1,"overflow":true}"#
       emit(status().merging(["sessionId": id, "session": payload], uniquingKeysWith: { _, new in new }))
     case "grant": fetchGrant(view: view)
     case "catalog":

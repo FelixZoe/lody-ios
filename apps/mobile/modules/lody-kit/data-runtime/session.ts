@@ -2,33 +2,34 @@ import { LoroDoc, LoroMap, LoroList, LoroText } from 'loro-crdt/base64';
 import { StreamsClient } from '@loro-dev/streams-client';
 import { decompress } from 'fzstd';
 import { decodeFrames, encodeFrame } from '../decoder/frames';
-import {
-  identityAt,
-  itemRev,
-  projectSession,
-  resetProjection,
-} from './project';
+import { identityAt, itemRev, projectSession } from './project';
 export { projectSession } from './project';
 
 type Grant = { token: string; gatewayBaseUrl: string };
-let active:
-  | {
-      id: string;
-      workspace: string;
-      doc: LoroDoc;
-      client: StreamsClient;
-      controller: AbortController;
-      ready: boolean;
-      sending: boolean;
-      getGrant: () => Promise<Grant>;
-      markDispatch: (sessionId: string, turnId: string) => Promise<void>;
-      emit: (event: object) => void;
-    }
-  | undefined;
-let pending: ReturnType<typeof setTimeout> | undefined;
-let firstQueuedAt = 0;
-let lastSignal = '';
-function signalOf(state: NonNullable<typeof active>, status: string) {
+export const MAX_BACKGROUND_SESSION_SYNCS = 3;
+type SessionState = {
+  id: string;
+  workspace: string;
+  doc: LoroDoc;
+  client: StreamsClient;
+  controller: AbortController;
+  ready: boolean;
+  sending: boolean;
+  status: string;
+  reason?: string;
+  pending?: ReturnType<typeof setTimeout>;
+  firstQueuedAt: number;
+  lastSignal: string;
+  unsent: Map<string, ReturnType<LoroDoc['version']>>;
+  getGrant: () => Promise<Grant>;
+  markDispatch: (sessionId: string, turnId: string) => Promise<void>;
+  emit: (event: object) => void;
+};
+let active: SessionState | undefined;
+// Map insertion order is user visit order. Stream updates never touch it.
+const sessions = new Map<string, SessionState>();
+export const retainedSessionIds = () => [...sessions.keys()];
+function signalOf(state: SessionState, status: string) {
   const history = state.doc.getList('history');
   let finished = 0;
   for (let i = 0; i < history.length; i++) {
@@ -38,39 +39,63 @@ function signalOf(state: NonNullable<typeof active>, status: string) {
   const awaiting = state.doc.getMap('session').get('awaitingUserSince') != null;
   return `${status}|${awaiting}|${finished}`;
 }
-function scheduleEmit(
-  state: NonNullable<typeof active>,
-  status: string,
-  reason?: string,
-) {
-  const flush = () => {
-    pending = undefined;
-    firstQueuedAt = 0;
-    if (active !== state) return;
-    state.emit({
-      type: 'session',
-      sessionId: state.id,
-      session: JSON.stringify(projectSession(state.doc, status, reason)),
-    });
-  };
-  if (pending) clearTimeout(pending);
-  const signal = signalOf(state, status);
+function flush(state: SessionState) {
+  clearTimeout(state.pending);
+  state.pending = undefined;
+  state.firstQueuedAt = 0;
+  if (sessions.get(state.id) !== state) return;
+  state.emit({
+    type: active === state ? 'session' : 'sessionCache',
+    sessionId: state.id,
+    synced: state.status === 'live',
+    session: JSON.stringify(
+      projectSession(state.doc, state.status, state.reason),
+    ),
+  });
+}
+function scheduleEmit(state: SessionState, status: string, reason?: string) {
+  state.status = status;
+  state.reason = reason;
+  if (sessions.get(state.id) !== state) return;
+  clearTimeout(state.pending);
   const now = Date.now();
-  if (signal !== lastSignal || (firstQueuedAt && now - firstQueuedAt >= 200)) {
-    lastSignal = signal;
-    flush();
+  const signal = signalOf(state, status);
+  const foreground = active === state;
+  const maxDelay = foreground ? 200 : 1000;
+  if (
+    (foreground && signal !== state.lastSignal) ||
+    (state.firstQueuedAt && now - state.firstQueuedAt >= maxDelay)
+  ) {
+    state.lastSignal = signal;
+    flush(state);
     return;
   }
-  if (!firstQueuedAt) firstQueuedAt = now;
-  pending = setTimeout(flush, 100);
+  if (!state.firstQueuedAt) state.firstQueuedAt = now;
+  state.pending = setTimeout(() => flush(state), foreground ? 100 : 1000);
+}
+function evict(state: SessionState) {
+  // Keep the last complete display snapshot even when its coalescing timer is pending.
+  if (state.ready) flush(state);
+  clearTimeout(state.pending);
+  state.controller.abort();
+  sessions.delete(state.id);
+}
+function trimSessions() {
+  for (const state of sessions.values()) {
+    if (sessions.size <= MAX_BACKGROUND_SESSION_SYNCS + (active ? 1 : 0)) break;
+    if (state !== active) evict(state);
+  }
 }
 export function closeSession() {
-  unsent.clear();
-  if (pending) clearTimeout(pending);
-  pending = undefined;
-  firstQueuedAt = 0;
-  lastSignal = '';
-  active?.controller.abort();
+  active = undefined;
+  trimSessions();
+}
+export function stopSessions() {
+  for (const state of sessions.values()) {
+    clearTimeout(state.pending);
+    state.controller.abort();
+  }
+  sessions.clear();
   active = undefined;
 }
 function unpack(bytes: Uint8Array) {
@@ -100,9 +125,21 @@ export async function openSession(
   emit: (event: object) => void,
   markDispatch: (sessionId: string, turnId: string) => Promise<void>,
 ) {
-  closeSession();
+  if ([...sessions.values()].some((state) => state.workspace !== workspace))
+    stopSessions();
+  const existing = sessions.get(id);
+  if (existing && existing.status !== 'offline') {
+    active = existing;
+    existing.emit = emit;
+    sessions.delete(id);
+    sessions.set(id, existing);
+    trimSessions();
+    flush(existing);
+    return 'watching';
+  }
+  if (existing) evict(existing);
   const controller = new AbortController();
-  const state = {
+  const state: SessionState = {
     id,
     workspace,
     doc: new LoroDoc(),
@@ -110,14 +147,19 @@ export async function openSession(
     controller,
     ready: false,
     sending: false,
+    status: 'syncing',
+    firstQueuedAt: 0,
+    lastSignal: '',
+    unsent: new Map(),
     getGrant,
     markDispatch,
     emit,
   };
   active = state;
-  resetProjection();
+  sessions.set(id, state);
+  trimSessions();
   const event = (status: string, reason?: string) => {
-    if (active === state) scheduleEmit(state, status, reason);
+    scheduleEmit(state, status, reason);
   };
   event('syncing');
   void (async () => {
@@ -127,7 +169,7 @@ export async function openSession(
         signal: controller.signal,
       });
       if (!initial.ok) throw new Error(initial.result.code);
-      if (active !== state) return;
+      if (sessions.get(id) !== state) return;
       const data = initial.result;
       let size = 0;
       const consume = (bytes: Uint8Array, snapshot = false) => {
@@ -143,7 +185,7 @@ export async function openSession(
       let offset = data.nextOffset,
         cursor = data.cursor,
         upToDate = data.upToDate;
-      while (active === state && !controller.signal.aborted) {
+      while (!controller.signal.aborted) {
         state.ready = upToDate;
         if (upToDate) {
           event('live');
@@ -156,7 +198,7 @@ export async function openSession(
           ...(upToDate ? { live: 'long-poll' as const } : {}),
         });
         if (!next.ok) throw new Error(next.result.code);
-        if (active !== state) return;
+        if (sessions.get(id) !== state) return;
         if (next.result.payload) consume(next.result.payload.body);
         if (next.result.nextOffset === offset && !next.result.upToDate)
           throw new Error('stalled_cursor');
@@ -454,7 +496,7 @@ export async function itemDetail(args: {
   const truncated = next < content.length;
   return {
     itemId: args.itemId,
-    rev: itemRev(args.entryId, args.itemId),
+    rev: itemRev(active.doc, args.entryId, args.itemId),
     blocks,
     rawInput: raw.rawInput,
     rawOutput: raw.rawOutput,
@@ -464,7 +506,6 @@ export async function itemDetail(args: {
     nextCursor: truncated ? String(next) : undefined,
   };
 }
-const unsent = new Map<string, ReturnType<LoroDoc['version']>>();
 export async function respondPermission(args: {
   sessionId: string;
   entryId: string;
@@ -488,9 +529,9 @@ export async function respondPermission(args: {
   if (current.outcome != null) {
     if (current.outcome.optionId !== args.optionId)
       return { state: 'conflict' as const };
-    if (!unsent.has(key)) return { state: 'accepted' as const };
+    if (!state.unsent.has(key)) return { state: 'accepted' as const };
   }
-  const before = unsent.get(key) ?? state.doc.version();
+  const before = state.unsent.get(key) ?? state.doc.version();
   if (current.outcome == null) {
     const outcome = { outcome: 'selected', optionId: args.optionId };
     if (request instanceof LoroMap) request.set('outcome', outcome);
@@ -505,10 +546,10 @@ export async function respondPermission(args: {
   });
   if (!result.ok) {
     // A user-initiated retry re-exports from this version; nothing replays on its own.
-    unsent.set(key, before);
+    state.unsent.set(key, before);
     throw new Error('upload_failed');
   }
-  unsent.delete(key);
+  state.unsent.delete(key);
   if (active === state) scheduleEmit(state, 'live');
   return { state: 'accepted' as const };
 }

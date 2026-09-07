@@ -7,6 +7,7 @@ extension NSAttributedString.Key {
 /// Foundation parses Markdown; UIKit displays it without a WebView or a RN text tree.
 /// Cache is bounded and independent of width, so a resize only measures again.
 final class ChatMarkdown {
+  var dynamicTraits = UITraitCollection.current
   private final class Parsed: NSObject {
     let value: AttributedString
     init(_ value: AttributedString) { self.value = value }
@@ -32,19 +33,26 @@ final class ChatMarkdown {
   }
 
   func text(_ source: String, secondary: Bool = false) -> NSAttributedString {
-    let key = (secondary ? "secondary:" : "body:") + source
+    let scale = UIFont.dynamicScale(compatibleWith: dynamicTraits)
+    let key = "\(scale):" + (secondary ? "secondary:" : "body:") + source
     if let cached = cache.object(forKey: key as NSString) { return cached }
-    let base = UIFont.systemFont(ofSize: secondary ? 14 : 16)
+    let base = UIFont.dynamic(of: secondary ? 15 : 17, compatibleWith: dynamicTraits)
     let color: UIColor = secondary ? .secondaryLabel : .label
+    let bodyLineHeight = (secondary ? 21 : 25) * scale
     let result = NSMutableAttributedString(string: "")
+    func paragraphStyle() -> NSMutableParagraphStyle {
+      let paragraph = NSMutableParagraphStyle()
+      paragraph.minimumLineHeight = bodyLineHeight
+      paragraph.maximumLineHeight = bodyLineHeight
+      paragraph.paragraphSpacing = 7
+      return paragraph
+    }
     if let parsed = parsed(source) {
       var blockID: Int?
       var blockAttributes: [NSAttributedString.Key: Any] = [:]
       for run in parsed.runs {
         var attributes: [NSAttributedString.Key: Any] = [.font: base, .foregroundColor: color]
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineSpacing = secondary ? 3 : 4
-        paragraph.paragraphSpacing = 7
+        let paragraph = paragraphStyle()
         var prefix = ""
         var font = base
         if let intent = run.presentationIntent {
@@ -69,11 +77,15 @@ final class ChatMarkdown {
           for component in intent.components {
             switch component.kind {
             case .listItem: paragraph.headIndent = 18
-            case .header(let level): font = .systemFont(ofSize: level == 1 ? 23 : level == 2 ? 20 : 17, weight: .semibold)
+            case .header(let level):
+              font = .dynamic(of: level == 1 ? 23 : level == 2 ? 20 : 17, weight: .semibold, compatibleWith: dynamicTraits)
+              paragraph.minimumLineHeight = 0
+              paragraph.maximumLineHeight = 0
             case .codeBlock:
               paragraph.paragraphSpacing = 0
-              paragraph.lineSpacing = 3
-              font = .monospacedSystemFont(ofSize: 13, weight: .regular)
+              paragraph.minimumLineHeight = 20 * scale
+              paragraph.maximumLineHeight = 20 * scale
+              font = .monospacedSystemFont(ofSize: 13 * scale, weight: .regular)
               paragraph.firstLineHeadIndent = 12
               paragraph.headIndent = 12
             case .blockQuote: attributes[.foregroundColor] = UIColor.secondaryLabel; paragraph.headIndent = 12
@@ -88,7 +100,7 @@ final class ChatMarkdown {
           if inline.contains(.emphasized) { traits.insert(.traitItalic) }
           if let descriptor = font.fontDescriptor.withSymbolicTraits(traits) { font = UIFont(descriptor: descriptor, size: font.pointSize) }
           if inline.contains(.code) {
-            font = .monospacedSystemFont(ofSize: 13, weight: .regular)
+            font = .monospacedSystemFont(ofSize: 13 * scale, weight: .regular)
             attributes[.backgroundColor] = UIColor.secondarySystemBackground
           }
           if inline.contains(.strikethrough) { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
@@ -102,7 +114,11 @@ final class ChatMarkdown {
         blockAttributes[.font] = paragraphFont
         result.append(NSAttributedString(string: prefix + String(parsed[run.range].characters), attributes: attributes))
       }
-    } else { result.append(NSAttributedString(string: source, attributes: [.font: base, .foregroundColor: color])) }
+    } else {
+      result.append(NSAttributedString(string: source, attributes: [
+        .font: base, .foregroundColor: color, .paragraphStyle: paragraphStyle(),
+      ]))
+    }
     cache.setObject(result, forKey: key as NSString, cost: result.length * 8)
     return result
   }

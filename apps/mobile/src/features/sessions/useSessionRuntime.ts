@@ -5,7 +5,7 @@ import {
   unwatchSession,
 } from '@lody-ios/kit';
 import { acceptEnvelope } from './acceptEnvelope';
-import { localGeneration, readLocal, writeLocal } from '../../cloud/local';
+import { localGeneration, readLocal } from '../../cloud/local';
 import { showToast } from '../../ui/toast';
 import type { EntrySummary, Envelope, ItemSummary } from './transcript/types';
 
@@ -63,6 +63,10 @@ export function useSessionRuntime(
     });
     const subscription = addDataRuntimeListener((event) => {
       if (!active || localVersion !== localGeneration()) return;
+      if (event.reason === 'session_cache_failed' && !saveErrorShown) {
+        saveErrorShown = true;
+        showToast('对话未能保存到本地，下次打开需要重新同步');
+      }
       if (event.sessionId === sessionId && event.session) {
         try {
           const data = JSON.parse(event.session);
@@ -80,12 +84,6 @@ export function useSessionRuntime(
           if (data.status === 'live') {
             received = true;
             setSnapshot(data);
-            void writeLocal(key, data, localVersion).catch(() => {
-              if (active && !saveErrorShown) {
-                saveErrorShown = true;
-                showToast('对话未能保存到本地，下次打开需要重新同步');
-              }
-            });
           } else {
             // Bootstrap/recovery can emit an empty or partial replica.
             setSnapshot((old) => ({ ...old, status: data.status }));

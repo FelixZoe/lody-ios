@@ -95,34 +95,40 @@ function useCatalogState() {
       );
       publishConnection({ state, machines, syncedAt });
     });
-    const stop = subscribeCatalog(selected.id, (event, data) => {
-      if (data) {
-        received = true;
-        syncedAt = Date.now();
-        machines = data.machineIds.length;
-        void writeLocal(key, { catalog: data, syncedAt }, localVersion).catch(
-          () => {
-            if (active && !saveErrorShown) {
-              saveErrorShown = true;
-              showToast('本地数据保存失败，下次启动可能需要重新同步');
-            }
-          },
+    const stop = subscribeCatalog(
+      selected.id,
+      account.user.id,
+      (event, data) => {
+        if (data) {
+          received = true;
+          syncedAt = Date.now();
+          machines = data.machineIds.length;
+          void writeLocal(key, { catalog: data, syncedAt }, localVersion).catch(
+            () => {
+              if (active && !saveErrorShown) {
+                saveErrorShown = true;
+                showToast('本地数据保存失败，下次启动可能需要重新同步');
+              }
+            },
+          );
+        }
+        const loading = ['starting', 'syncing', 'background'].includes(
+          event.state,
         );
-      }
-      const loading = ['starting', 'syncing', 'background'].includes(
-        event.state,
-      );
-      const connected = !['offline', 'failed', 'stopped'].includes(event.state);
-      state = !connected ? 'offline' : loading ? 'syncing' : 'live';
-      setSnapshot((old) => ({
-        key,
-        catalog: data ?? (old.key === key ? old.catalog : empty),
-        loading,
-        connected,
-        syncedAt: syncedAt ?? old.syncedAt,
-      }));
-      publishConnection({ state, machines, syncedAt });
-    });
+        const connected = !['offline', 'failed', 'stopped'].includes(
+          event.state,
+        );
+        state = !connected ? 'offline' : loading ? 'syncing' : 'live';
+        setSnapshot((old) => ({
+          key,
+          catalog: data ?? (old.key === key ? old.catalog : empty),
+          loading,
+          connected,
+          syncedAt: syncedAt ?? old.syncedAt,
+        }));
+        publishConnection({ state, machines, syncedAt });
+      },
+    );
     return () => {
       active = false;
       stop();

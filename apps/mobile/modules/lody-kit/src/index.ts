@@ -89,3 +89,5 @@ export {
 } from './menu/NativeContextMenu';
 
 export { NativeChat } from './chat/NativeChat';
+
+export { NativeComposer } from './chat/NativeComposer';

@@ -6,7 +6,7 @@ public final class LodyKitModule: Module {
   private let localStore = LocalStore()
   private var authBrowser: SFSafariViewController?
 
-  private lazy var dataRuntime = DataRuntime { [weak self] event in self?.sendEvent("onDataRuntime", event) }
+  private lazy var dataRuntime = DataRuntime(localStore: localStore) { [weak self] event in self?.sendEvent("onDataRuntime", event) }
 
   public func definition() -> ModuleDefinition {
     Name("LodyKit")
@@ -20,9 +20,9 @@ public final class LodyKitModule: Module {
       #endif
     }
 
-    AsyncFunction("watchCatalog") { (workspace: String, owner: String) in
-      guard !workspace.isEmpty, !owner.isEmpty else { throw NSError(domain: "InvalidSubscription", code: 1) }
-      self.dataRuntime.start(workspace: workspace, owner: owner)
+    AsyncFunction("watchCatalog") { (workspace: String, owner: String, userId: String) in
+      guard !workspace.isEmpty, !owner.isEmpty, !userId.isEmpty else { throw NSError(domain: "InvalidSubscription", code: 1) }
+      self.dataRuntime.start(workspace: workspace, owner: owner, userId: userId)
     }.runOnQueue(.main)
     AsyncFunction("unwatchCatalog") { (owner: String) in self.dataRuntime.stop(owner: owner) }.runOnQueue(.main)
     AsyncFunction("watchSession") { (id: String) in self.dataRuntime.openSession(id) }.runOnQueue(.main)
@@ -58,7 +58,14 @@ public final class LodyKitModule: Module {
     AsyncFunction("readLocalStartup") { try self.localStore.startup() }.runOnQueue(LocalStore.queue)
     AsyncFunction("readLocalValue") { (key: String) in try self.localStore.read(key) }.runOnQueue(LocalStore.queue)
     AsyncFunction("writeLocalValue") { (key: String, value: String) in try self.localStore.write(key, value) }.runOnQueue(LocalStore.queue)
-    AsyncFunction("clearLocalValues") { try self.localStore.clear() }.runOnQueue(LocalStore.queue)
+    AsyncFunction("clearLocalValues") { (promise: Promise) in
+      // Stop producers before clearing their queued writes, including background Sessions.
+      self.dataRuntime.stop()
+      LocalStore.queue.async {
+        do { try self.localStore.clear(); promise.resolve(nil) }
+        catch { promise.reject(error) }
+      }
+    }.runOnQueue(.main)
 
     AsyncFunction("readAuthToken") { try AuthKeychain.read() }.runOnQueue(.main)
     AsyncFunction("saveAuthToken") { (token: String) in try AuthKeychain.save(token) }.runOnQueue(.main)
@@ -130,6 +137,13 @@ public final class LodyKitModule: Module {
         "offlineProbe": offlineProbe,
         "systemVersion": UIDevice.current.systemVersion,
       ]]
+    }
+
+    View(LodyComposerView.self) {
+      Events("onSend", "onHeightChange", "onComposerOptionChange")
+      Prop("composerJSON") { (view: LodyComposerView, value: String) in view.composer.setComposerState(value) }
+      Prop("composerOptionsJSON") { (view: LodyComposerView, value: String) in view.composer.setComposerOptions(value) }
+      Prop("restoreDraftToken") { (view: LodyComposerView, value: Int) in view.composer.restoreDraft(token: value) }
     }
 
     View(LodyChatView.self) {

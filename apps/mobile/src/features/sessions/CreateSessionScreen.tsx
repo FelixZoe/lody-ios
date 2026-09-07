@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, TextInput, View } from 'react-native';
 import {
   NativeGroupedList,
+  NativeComposer,
   type NativeListSection,
   createSession,
   sessionCreationOptions,
@@ -14,7 +15,6 @@ import { capabilityFor } from '@/cloud/model';
 import { usePalette } from '@/theme/palette';
 import { type as typeScale } from '@/theme/tokens';
 import { AppText } from '@/ui/AppText';
-import { Composer } from '@/ui/Composer';
 import { showToast } from '@/ui/toast';
 import { draftTitle } from './draftTitle';
 import { pickerPage } from './PickerScreen';
@@ -56,7 +56,7 @@ function CreateSessionScreen() {
   const [agentKey, setAgentKey] = useState('');
   const [choice, setChoice] = useState<ModelChoice>({});
   const [branch, setBranch] = useState('');
-  const [draft, setDraft] = useState('');
+  const [restoreDraftToken, setRestoreDraftToken] = useState(0);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [uncertain, setUncertain] = useState(false);
@@ -117,11 +117,15 @@ function CreateSessionScreen() {
   const agent = agents.find((a) => `${a.machineId}:${a.id}` === agentKey);
   const capability = capabilityFor(options, agent);
 
-  async function submit() {
+  async function submit(draft: string) {
     const ready =
       !!agent && !!options && !!account && !!draft.trim() && !uncertain;
-    if (busy.current || !ready) return;
+    if (busy.current || !ready) {
+      setRestoreDraftToken((n) => n + 1);
+      return;
+    }
     if (github && !branch.trim()) {
+      setRestoreDraftToken((n) => n + 1);
       showToast('GitHub 项目需要填写起始分支。');
       return;
     }
@@ -152,6 +156,7 @@ function CreateSessionScreen() {
         });
         return;
       }
+      setRestoreDraftToken((n) => n + 1);
       if (result.state === 'rejected') {
         showToast('尚未创建会话，请重新读取电脑配置后重试。');
         setRevision((n) => n + 1);
@@ -160,6 +165,7 @@ function CreateSessionScreen() {
         showToast('创建结果暂时无法确认。请回到会话列表查看，不要重复创建。');
       }
     } catch {
+      setRestoreDraftToken((n) => n + 1);
       setUncertain(true);
       showToast('创建结果暂时无法确认。请回到会话列表查看，不要重复创建。');
     } finally {
@@ -351,27 +357,43 @@ function CreateSessionScreen() {
           />
         </View>
       ) : null}
-      <View style={{ paddingHorizontal: 16, paddingBottom: 12, gap: 8 }}>
-        <Composer
-          testID="create-session-input"
-          placeholder="描述你要做什么…"
-          value={draft}
-          onChangeText={setDraft}
-          onSubmit={() => void submit()}
-          editable={!uncertain}
-          submitDisabled={!agent || loading}
-          sending={sending}
-        />
-        <AppText variant="meta" style={{ textAlign: 'center' }}>
-          {uncertain
+      <NativeComposer
+        composerJSON={JSON.stringify({
+          editable: !uncertain,
+          canSend: !!agent && !!account && !loading && !uncertain,
+          sending,
+          notice: uncertain
             ? '请关闭并查看会话列表，确认创建结果。'
             : loading
               ? '正在准备助手，你可以先写下任务。'
               : !agent
                 ? '选择可用的助手后即可发送。'
-                : '发送后开始新会话'}
-        </AppText>
-      </View>
+                : '',
+          reconnect: false,
+          placeholder: '描述你要做什么…',
+        })}
+        composerOptionsJSON={JSON.stringify({
+          modelId: choice.modelId ?? '',
+          effort: choice.effort ?? '',
+          models: (capability?.models ?? []).map((item) => ({
+            id: item.id,
+            title: item.name,
+          })),
+          efforts: (choice.modelId
+            ? (capability?.reasoningEfforts[choice.modelId] ?? [])
+            : []
+          ).map((id) => ({ id, title: id })),
+        })}
+        restoreDraftToken={restoreDraftToken}
+        onSend={({ nativeEvent }) => void submit(nativeEvent.text)}
+        onComposerOptionChange={({ nativeEvent }) =>
+          setChoice((current) => ({
+            ...current,
+            modelId: nativeEvent.modelId || undefined,
+            effort: nativeEvent.effort || undefined,
+          }))
+        }
+      />
     </KeyboardAvoidingView>
   );
 

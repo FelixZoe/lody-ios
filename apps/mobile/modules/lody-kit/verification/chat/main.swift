@@ -114,39 +114,14 @@ fade.update("aa", animate: false, at: 6, reset: true)
 fade.update("aaa", animate: true, at: 7)
 assert(fade.active.count == 1 && fade.active[0].range.location == 2)
 
-var tracking = ChatScroll()
-tracking.update(entryID: "live", rows: [("text", [22, 22])], initialEnd: 600, viewport: 200, minimum: -100)
-assert(tracking.target == 400)
-tracking.update(entryID: "live", rows: [("text", [30, 30])], initialEnd: 616, viewport: 200, minimum: -100)
-assert(tracking.target == 400, "Reformatting existing lines cannot drive the scroll")
-tracking.update(entryID: "live", rows: [("text", [30, 30, 22])], initialEnd: 638, viewport: 200, minimum: -100)
-assert(tracking.target == 438, "Only a newly laid-out line advances tracking")
-tracking.update(entryID: "live", rows: [("text", [22])], initialEnd: 500, viewport: 200, minimum: -100)
-assert(tracking.target == 438, "Markdown contraction must not reverse tracking")
-tracking.update(entryID: "live", rows: [("text", [22, 22, 22]), ("tool", [44])], initialEnd: 682, viewport: 200, minimum: -100)
-assert(tracking.target == 482, "Reappearing lines must not be counted twice")
-assert(tracking.isWithinReach(of: 481) && !tracking.isWithinReach(of: 480))
-assert(!tracking.isWithinReach(of: 463), "A small upward drag must not resume tracking inside the old 80 pt range")
-var offset = 400.0
-let next = tracking.nextOffset(from: offset, elapsed: 1.0 / 60, reducedMotion: false)
-assert(next > offset && next < 441, "Scrolling must ease toward the new line")
-for _ in 0..<90 { offset = tracking.nextOffset(from: offset, elapsed: 1.0 / 60, reducedMotion: false) }
-assert(abs(offset - 482) < 0.25)
-assert(tracking.nextOffset(from: 0, elapsed: 0, reducedMotion: true) == 482)
-tracking.finish()
-assert(tracking.entryID == nil && tracking.target == nil, "Completion must release the scroll target")
-assert(tracking.nextOffset(from: 123, elapsed: 1, reducedMotion: false) == 123)
-assert(!tracking.isWithinReach(of: 123), "A completed turn must not re-enable tracking")
-print("Scroll tracking: new-line progress, Markdown reflow, threshold release/resume, smoothing and completion passed")
-
-var fastTracking = ChatScroll()
-fastTracking.update(entryID: "burst", rows: [("text", Array(repeating: 22, count: 50))], initialEnd: 1200, viewport: 200, minimum: 0)
-var fastOffset = 0.0
-for _ in 0..<9 { fastOffset = fastTracking.nextOffset(from: fastOffset, elapsed: 1.0 / 60, reducedMotion: false) }
-assert(1000 - fastOffset < 24, "A fast burst must be caught within a line, not trail behind for seconds")
-fastTracking.finish()
-assert(fastTracking.target == nil)
-print("Fast stream: adaptive catch-up and final paragraph spacing passed")
+assert(ChatScroll.bottom(contentHeight: 600, viewportHeight: 200, topInset: 100, bottomInset: 40) == 440)
+assert(ChatScroll.bottom(contentHeight: 616, viewportHeight: 200, topInset: 100, bottomInset: 40) == 456,
+  "Reflow must follow the actual bottom even without a new line")
+assert(ChatScroll.bottom(contentHeight: 500, viewportHeight: 200, topInset: 100, bottomInset: 40) == 340,
+  "Markdown contraction must not leave a stale target below the content")
+assert(ChatScroll.bottom(contentHeight: 20, viewportHeight: 200, topInset: 100, bottomInset: 40) == -100,
+  "Short content must respect the top inset")
+print("Scroll bottom: growth, reflow, contraction and short content passed")
 
 // Image history keeps media above the text bubble and reserves the user anchor.
 let imageHistory = """

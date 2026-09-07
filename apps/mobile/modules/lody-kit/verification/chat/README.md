@@ -50,6 +50,7 @@ xcrun --sdk iphonesimulator swiftc -target arm64-apple-ios18.0-simulator \
   apps/mobile/modules/lody-kit/ios/Chat/ChatTextFade.swift \
   apps/mobile/modules/lody-kit/ios/Chat/ChatTextView.swift \
   apps/mobile/modules/lody-kit/ios/Chat/ChatMarkdown.swift \
+  apps/mobile/modules/lody-kit/ios/UIFont+Dynamic.swift \
   apps/mobile/modules/lody-kit/verification/chat-render/main.swift \
   -o /tmp/lody-chat-render-test
 xcrun simctl spawn booted /tmp/lody-chat-render-test
@@ -87,18 +88,9 @@ detail action, then checks live segment boundaries and conclusion-only completio
 The title is installed directly as `UINavigationItem.titleView`, with UIKit owning
 its layout and scroll edge; no React Native header title wrapper is involved.
 
-Automatic tracking advances from newly laid-out TextKit lines, with an 80 pt
-release/resume distance and adaptive 25–80 ms easing. Reformatting or
-shrinking existing Markdown does not reverse the target. Native layout cannot
-change the controlled offset; extra bottom inset keeps that offset reachable.
-Dragging suspends the ticker, and the threshold determines whether it resumes
-when the gesture ends. Verify by scrolling into history during replay, waiting
-for more text, then returning to within the last few lines.
-
-A new line calibrates the target from that line's actual position; it does not
-accumulate estimated heights. Completion cancels the ticker, removes the target
-and offset lock, and restores the normal inset. Returning near the tail after
-completion does not restart tracking.
+Automatic tracking scrolls directly to the actual collection bottom after each
+content update and layout, including Markdown reflow and contraction. There is
+no line-count target, scrolling ticker or locked offset.
 
 Dragging immediately pauses tracking, even inside the old 80 pt range. Tracking
 resumes only after a gesture ends at the tail or the down arrow is tapped.

@@ -57,28 +57,32 @@ export type Envelope = {
 };
 
 let revision = 0;
-const revs = new Map<string, { rev: number; fingerprint: string }>();
-const entryCache = new Map<
-  string,
-  { fingerprint: string; value: EntrySummary & { userTurnId?: string } }
->();
-
-function bump(key: string, fingerprint: string) {
-  const previous = revs.get(key);
+type Projection = {
+  revs: Map<string, { rev: number; fingerprint: string }>;
+  entries: Map<
+    string,
+    { fingerprint: string; value: EntrySummary & { userTurnId?: string } }
+  >;
+};
+const projections = new WeakMap<LoroDoc, Projection>();
+function projectionFor(doc: LoroDoc) {
+  let projection = projections.get(doc);
+  if (!projection) {
+    projection = { revs: new Map(), entries: new Map() };
+    projections.set(doc, projection);
+  }
+  return projection;
+}
+function bump(projection: Projection, key: string, fingerprint: string) {
+  const previous = projection.revs.get(key);
   if (previous && previous.fingerprint === fingerprint) return previous.rev;
   const rev = (previous?.rev ?? 0) + 1;
-  revs.set(key, { rev, fingerprint });
+  projection.revs.set(key, { rev, fingerprint });
   return rev;
 }
 
-export function resetProjection() {
-  // Reopening a session keeps the native generation; revisions must stay monotonic.
-  revs.clear();
-  entryCache.clear();
-}
-
-export function itemRev(entryId: string, itemId: string) {
-  return revs.get(`${entryId}/${itemId}`)?.rev ?? 0;
+export function itemRev(doc: LoroDoc, entryId: string, itemId: string) {
+  return projectionFor(doc).revs.get(`${entryId}/${itemId}`)?.rev ?? 0;
 }
 
 export function identityAt(list: LoroList, index: number) {
@@ -106,7 +110,12 @@ function countDiff(content: unknown) {
     : { path, added, removed };
 }
 
-function summarizeItem(raw: any, entryId: string, identity: string) {
+function summarizeItem(
+  projection: Projection,
+  raw: any,
+  entryId: string,
+  identity: string,
+) {
   const type = String(raw?.type ?? 'unknown');
   const itemId =
     type === 'tool_call' && typeof raw.toolCallId === 'string'
@@ -116,7 +125,12 @@ function summarizeItem(raw: any, entryId: string, identity: string) {
 
   if (type === 'text' || type === 'thought') {
     const text = typeof raw.text === 'string' ? raw.text : '';
-    return { itemId, rev: bump(key, text), type, text } as ItemSummary;
+    return {
+      itemId,
+      rev: bump(projection, key, text),
+      type,
+      text,
+    } as ItemSummary;
   }
 
   if (type === 'image') {
@@ -136,14 +150,19 @@ function summarizeItem(raw: any, entryId: string, identity: string) {
     };
     return {
       itemId,
-      rev: bump(key, JSON.stringify(image)),
+      rev: bump(projection, key, JSON.stringify(image)),
       type,
       image,
     } as ItemSummary;
   }
   if (type === 'file') {
     const text = `文件：${String(raw.fileName ?? '附件')}`;
-    return { itemId, rev: bump(key, text), type: 'text', text } as ItemSummary;
+    return {
+      itemId,
+      rev: bump(projection, key, text),
+      type: 'text',
+      text,
+    } as ItemSummary;
   }
 
   if (type === 'tool_call') {
@@ -167,7 +186,7 @@ function summarizeItem(raw: any, entryId: string, identity: string) {
       hasDetail: Array.isArray(raw.content) ? raw.content.length > 0 : false,
       permission,
     };
-    summary.rev = bump(key, JSON.stringify(summary));
+    summary.rev = bump(projection, key, JSON.stringify(summary));
     return summary as ItemSummary;
   }
 
@@ -181,7 +200,7 @@ function summarizeItem(raw: any, entryId: string, identity: string) {
     );
     return {
       itemId,
-      rev: bump(key, JSON.stringify(entries)),
+      rev: bump(projection, key, JSON.stringify(entries)),
       type,
       entries,
     } as ItemSummary;
@@ -198,17 +217,22 @@ function summarizeItem(raw: any, entryId: string, identity: string) {
       description:
         raw.description == null ? undefined : String(raw.description),
     };
-    summary.rev = bump(key, JSON.stringify(summary));
+    summary.rev = bump(projection, key, JSON.stringify(summary));
     return summary as ItemSummary;
   }
 
-  return { itemId, rev: bump(key, type), type } as ItemSummary;
+  return { itemId, rev: bump(projection, key, type), type } as ItemSummary;
 }
 
-function summarizeEntry(history: LoroList, entry: any, index: number) {
+function summarizeEntry(
+  projection: Projection,
+  history: LoroList,
+  entry: any,
+  index: number,
+) {
   const id = String(entry?.id ?? identityAt(history, index));
   const fingerprint = JSON.stringify(entry);
-  const cached = entryCache.get(id);
+  const cached = projection.entries.get(id);
   if (cached && cached.fingerprint === fingerprint) return cached.value;
   const container = history.get(index) as LoroMap | undefined;
   const items =
@@ -218,6 +242,7 @@ function summarizeEntry(history: LoroList, entry: any, index: number) {
   const list = Array.isArray(entry?.items) ? entry.items : [];
   const summarizedItems: ItemSummary[] = list.map((item: any, i: number) =>
     summarizeItem(
+      projection,
       item,
       id,
       items && typeof items.getIdAt === 'function'
@@ -228,6 +253,7 @@ function summarizeEntry(history: LoroList, entry: any, index: number) {
   const value = {
     id,
     rev: bump(
+      projection,
       `entry/${id}`,
       summarizedItems.map((i) => `${i.itemId}:${i.rev}`).join(',') +
         `|${entry?.status}|${entry?.finished}`,
@@ -242,7 +268,7 @@ function summarizeEntry(history: LoroList, entry: any, index: number) {
     userTurnId: entry?.userTurnId,
     items: summarizedItems,
   };
-  entryCache.set(id, { fingerprint, value });
+  projection.entries.set(id, { fingerprint, value });
   return value;
 }
 
@@ -262,7 +288,7 @@ export function projectSession(
     (value) => typeof value === 'string',
   );
   const summarized = raw.map((entry, index) =>
-    summarizeEntry(history, entry, index),
+    summarizeEntry(projectionFor(doc), history, entry, index),
   );
 
   // A daemon history-sync timeout can place a concurrent reply before its input.
