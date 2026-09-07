@@ -9,10 +9,10 @@ workflows:
       vars:
         EXPO_NO_DOCTOR: "1"
     scripts:
-      - name: Enable Corepack and install pnpm
+      - name: Install pnpm
         script: |
-          corepack enable
-          corepack prepare pnpm@11.10.0 --activate
+          npm install --global pnpm@11.10.0 --force
+          pnpm --version
       - name: Install JavaScript dependencies
         script: |
           pnpm install --frozen-lockfile
