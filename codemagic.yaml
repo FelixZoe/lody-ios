@@ -1,0 +1,51 @@
+workflows:
+  ios-debug:
+    name: Lody iOS Debug
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    environment:
+      node: 22.13.0
+      ruby: 3.3.0
+      vars:
+        EXPO_NO_DOCTOR: "1"
+    scripts:
+      - name: Enable Corepack and install pnpm
+        script: |
+          corepack enable
+          corepack prepare pnpm@11.10.0 --activate
+      - name: Install JavaScript dependencies
+        script: |
+          pnpm install --frozen-lockfile
+      - name: Generate native assets and iOS project
+        script: |
+          cd apps/mobile
+          pnpm native:assets
+          npx expo prebuild --platform ios --no-install
+      - name: Install Ruby gems and CocoaPods dependencies
+        script: |
+          cd apps/mobile
+          bundle install
+          cd ios
+          bundle exec pod install --repo-update
+      - name: Build unsigned iOS app
+        script: |
+          cd apps/mobile/ios
+          WORKSPACE=$(find . -maxdepth 1 -name "*.xcworkspace" | head -n 1)
+          SCHEME=$(xcodebuild -workspace "$WORKSPACE" -list -json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["workspace"]["schemes"][0])')
+          xcodebuild \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+    artifacts:
+      - apps/mobile/ios/build/**
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/Products/**/*.app
+    publishing:
+      email:
+        notify:
+          success: false
+          failure: false
