@@ -328,21 +328,16 @@ final class ChatComposerView: UIView, UITextViewDelegate {
   private var pendingDraft: (text: String, attachments: [ChatAttachment])?
   private var lastRestoreToken = 0
   private var hasInitialDraft = false
+  private var hasInitialAttachments = false
   private var lastClearToken = 0
   var onSend: (([String: Any]) -> Void)?
   var onReconnect: (() -> Void)?
   var onComposerOptionChange: (([String: String]) -> Void)?
+  var onDraftChange: ((String) -> Void)?
   var onHeightChange: ((CGFloat) -> Void)?
   var displayError: String? { didSet { updateComposer() } }
   private var inputLeading: NSLayoutConstraint!
   private var measuredWidth: CGFloat = 0
-
-  func setAttachmentsEnabled(_ enabled: Bool) {
-    attachSurface.isHidden = !enabled
-    inputLeading.isActive = false
-    inputLeading = inputSurface.leadingAnchor.constraint(equalTo: enabled ? attachSurface.trailingAnchor : composer.leadingAnchor, constant: enabled ? 8 : 16)
-    inputLeading.isActive = true
-  }
 
   func setInputIdentifier(_ id: String) { input.accessibilityIdentifier = id }
 
@@ -424,6 +419,7 @@ final class ChatComposerView: UIView, UITextViewDelegate {
     send.accessibilityLabel = "发送"
     send.accessibilityIdentifier = "session-send"
     send.addTarget(self, action: #selector(submit), for: .touchUpInside)
+    NotificationCenter.default.addObserver(self, selector: #selector(appDidEnterBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
     attach.setImage(UIImage(systemName: "plus", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .medium)), for: .normal)
     attach.configuration = .plain()
     attach.configuration?.cornerStyle = .capsule
@@ -525,6 +521,33 @@ final class ChatComposerView: UIView, UITextViewDelegate {
     input.text = text
     updateComposer()
   }
+  func setStoredDraft(_ text: String) {
+    guard !text.isEmpty, pendingDraft == nil, input.text.isEmpty else { return }
+    input.text = text
+    updateComposer()
+  }
+  private func saveDraft() {
+    onDraftChange?(pendingDraft?.text ?? input.text ?? "")
+  }
+  @objc private func appDidEnterBackground() { saveDraft() }
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window == nil { saveDraft() }
+  }
+  func setInitialAttachments(_ json: String) {
+    guard !hasInitialAttachments else { return }
+    struct DraftAttachment: Decodable {
+      let id: String
+      let name: String
+      let uri: URL
+      let kind: String
+    }
+    guard let drafts = try? JSONDecoder().decode([DraftAttachment].self, from: Data(json.utf8)),
+      drafts.allSatisfy({ $0.uri.isFileURL && ($0.kind == "image" || $0.kind == "file") }) else { return }
+    hasInitialAttachments = true
+    attachments = drafts.map { ChatAttachment(id: $0.id, name: $0.name, url: $0.uri, isImage: $0.kind == "image") }
+    updateComposer()
+  }
   func clearDraft(token: Int) {
     guard token > lastClearToken else { return }
     lastClearToken = token
@@ -532,6 +555,7 @@ final class ChatComposerView: UIView, UITextViewDelegate {
     input.text = ""
     attachments = []
     updateComposer()
+    onDraftChange?("")
   }
   func restoreDraft(token: Int) {
     guard token > lastRestoreToken else { return }
@@ -674,7 +698,7 @@ final class ChatComposerView: UIView, UITextViewDelegate {
   }
   func textViewDidChange(_ textView: UITextView) { updateComposer() }
   func textViewDidBeginEditing(_ textView: UITextView) { updateComposer() }
-  func textViewDidEndEditing(_ textView: UITextView) { updateComposer() }
+  func textViewDidEndEditing(_ textView: UITextView) { updateComposer(); saveDraft() }
   func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
     (textView.text as NSString).length - range.length + (text as NSString).length <= 32000
   }

@@ -132,13 +132,11 @@ final class DataRuntime: NSObject, WKScriptMessageHandler, WKNavigationDelegate 
       guard let id = body["sessionId"] as? String,
             let session = body["session"] as? String else { return }
       let fits = session.utf8.count <= 12 * 1024 * 1024
-      if fits, body["synced"] as? Bool == true, let workspace, !userId.isEmpty,
-         let keyData = try? JSONSerialization.data(withJSONObject: [userId, workspace, id], options: [.withoutEscapingSlashes]),
-         let suffix = String(data: keyData, encoding: .utf8) {
-        let generation = self.generation
+      if fits, body["synced"] as? Bool == true, let workspace, !userId.isEmpty {
+        let generation = self.generation, userId = self.userId
         LocalStore.queue.async { [weak self] in
           guard let self else { return }
-          do { try self.localStore.write("session:" + suffix, session) }
+          do { try self.localStore.writeSession(session, userId: userId, workspace: workspace, id: id) }
           catch {
             DispatchQueue.main.async { [weak self] in
               guard let self, self.generation == generation, self.workspace != nil, !self.cacheErrorShown else { return }

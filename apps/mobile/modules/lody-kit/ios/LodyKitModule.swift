@@ -3,7 +3,7 @@ import UIKit
 import SafariServices
 
 public final class LodyKitModule: Module {
-  private let localStore = LocalStore()
+  private let localStore = LocalStore.shared
   private var authBrowser: SFSafariViewController?
 
   private lazy var dataRuntime = DataRuntime(localStore: localStore) { [weak self] event in self?.sendEvent("onDataRuntime", event) }
@@ -157,6 +157,8 @@ public final class LodyKitModule: Module {
       Prop("composerJSON") { (view: LodyChatView, value: String) in view.setComposerState(value) }
       Prop("composerOptionsJSON") { (view: LodyChatView, value: String) in view.setComposerOptions(value) }
       Prop("initialDraft") { (view: LodyChatView, value: String) in view.setInitialDraft(value) }
+      Prop("draftKey") { (view: LodyChatView, value: String) in view.setDraftKey(value) }
+      Prop("initialAttachmentsJSON") { (view: LodyChatView, value: String) in view.setInitialAttachments(value) }
       Prop("clearDraftToken") { (view: LodyChatView, value: Int) in
         view.clearDraft(token: value)
       }

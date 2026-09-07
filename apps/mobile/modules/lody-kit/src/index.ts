@@ -88,6 +88,6 @@ export {
   type NativeContextMenuProps,
 } from './menu/NativeContextMenu';
 
-export { NativeChat } from './chat/NativeChat';
+export { NativeChat, type ChatDraftAttachment } from './chat/NativeChat';
 
 export { NativeComposer } from './chat/NativeComposer';

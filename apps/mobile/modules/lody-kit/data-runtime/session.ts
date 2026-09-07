@@ -59,8 +59,8 @@ function scheduleEmit(state: SessionState, status: string, reason?: string) {
   if (sessions.get(state.id) !== state) return;
   clearTimeout(state.pending);
   const now = Date.now();
-  const signal = signalOf(state, status);
   const foreground = active === state;
+  const signal = foreground ? signalOf(state, status) : '';
   const maxDelay = foreground ? 200 : 1000;
   if (
     (foreground && signal !== state.lastSignal) ||
@@ -165,6 +165,7 @@ export async function openSession(
   void (async () => {
     try {
       state.client = await clientFor(`${workspace}:s:${id}`, getGrant);
+      controller.signal.throwIfAborted();
       const initial = await state.client.bootstrap({
         signal: controller.signal,
       });
@@ -182,15 +183,20 @@ export async function openSession(
         consume(data.snapshot.body, true);
       for (const part of data.updates) consume(part.body);
       let pages = 0;
+      let changed = true;
       let offset = data.nextOffset,
         cursor = data.cursor,
         upToDate = data.upToDate;
       while (!controller.signal.aborted) {
         state.ready = upToDate;
         if (upToDate) {
-          event('live');
+          if (changed || state.status !== 'live') event('live');
+          changed = false;
           pages = 0;
-        } else if (++pages > 100) throw new Error('session_limit');
+        } else {
+          event('syncing');
+          if (++pages > 100) throw new Error('session_limit');
+        }
         const next = await state.client.readOnce({
           offset,
           cursor,
@@ -199,7 +205,10 @@ export async function openSession(
         });
         if (!next.ok) throw new Error(next.result.code);
         if (sessions.get(id) !== state) return;
-        if (next.result.payload) consume(next.result.payload.body);
+        if (next.result.payload) {
+          consume(next.result.payload.body);
+          changed = true;
+        }
         if (next.result.nextOffset === offset && !next.result.upToDate)
           throw new Error('stalled_cursor');
         offset = next.result.nextOffset;

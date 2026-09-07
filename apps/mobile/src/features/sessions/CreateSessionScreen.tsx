@@ -1,9 +1,10 @@
 import { projectPickerPage } from './ProjectPickerScreen';
 import { useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, TextInput, View } from 'react-native';
+import { TextInput, View } from 'react-native';
 import {
   NativeGroupedList,
   NativeComposer,
+  type ChatDraftAttachment,
   type NativeListSection,
   createSession,
   sessionCreationOptions,
@@ -16,7 +17,15 @@ import { usePalette } from '@/theme/palette';
 import { type as typeScale } from '@/theme/tokens';
 import { AppText } from '@/ui/AppText';
 import { showToast } from '@/ui/toast';
+import { readLocal, writeLocal } from '@/cloud/local';
 import { draftTitle } from './draftTitle';
+import {
+  type CreatePrefs,
+  createPrefsKey,
+  rememberedProject,
+  restoreSelection,
+  withSelection,
+} from './createPrefs';
 import { pickerPage } from './PickerScreen';
 import {
   hasModelTabs,
@@ -36,6 +45,7 @@ const creatable = (project: Project) => !project.id.endsWith(':unassigned');
 export type CreatedSession = {
   session: Session;
   draft: string;
+  attachments: ChatDraftAttachment[];
   modelId?: string;
   effort?: string;
   modeId?: string;
@@ -57,6 +67,9 @@ function CreateSessionScreen() {
   const [choice, setChoice] = useState<ModelChoice>({});
   const [branch, setBranch] = useState('');
   const [restoreDraftToken, setRestoreDraftToken] = useState(0);
+  const prefs = useRef<CreatePrefs | null>(null);
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
+  const prefsKey = createPrefsKey(account?.user.id ?? '', params.workspaceId);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [uncertain, setUncertain] = useState(false);
@@ -67,6 +80,21 @@ function CreateSessionScreen() {
   const github = projectId.startsWith('github:');
 
   useEffect(() => {
+    let active = true;
+    void readLocal<CreatePrefs>(prefsKey).then((saved) => {
+      if (!active) return;
+      prefs.current = saved;
+      const remembered = rememberedProject(saved, params.projects);
+      if (!params.projectId && remembered) setProjectId(remembered);
+      setPrefsLoaded(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, [prefsKey, params.projectId, params.projects]);
+
+  useEffect(() => {
+    if (!prefsLoaded) return;
     if (!projectId) {
       setLoading(false);
       return;
@@ -81,8 +109,10 @@ function CreateSessionScreen() {
         if (!active) return;
         const value: CreationOptions = JSON.parse(raw);
         setOptions(value);
-        const first = value.agents[0];
-        setAgentKey(first ? `${first.machineId}:${first.id}` : '');
+        const restored = restoreSelection(prefs.current, projectId, value);
+        setMachineId(restored.machineId);
+        setAgentKey(restored.agentKey);
+        setChoice(restored.choice);
       })
       .catch((error: unknown) => {
         if (!active) return;
@@ -98,7 +128,7 @@ function CreateSessionScreen() {
     return () => {
       active = false;
     };
-  }, [params.workspaceId, projectId, revision]);
+  }, [params.workspaceId, projectId, revision, prefsLoaded]);
 
   // A local project pins its own machine at the projection layer, so only a
   // GitHub project actually has a machine to choose.
@@ -117,9 +147,23 @@ function CreateSessionScreen() {
   const agent = agents.find((a) => `${a.machineId}:${a.id}` === agentKey);
   const capability = capabilityFor(options, agent);
 
-  async function submit(draft: string) {
+  useEffect(() => {
+    if (!options || !agent) return;
+    prefs.current = withSelection(prefs.current, projectId, {
+      machineId: agent.machineId,
+      agentKey,
+      ...choice,
+    });
+    void writeLocal(prefsKey, prefs.current);
+  }, [options, agent, agentKey, choice, projectId, prefsKey]);
+
+  async function submit(draft: string, attachments: ChatDraftAttachment[]) {
     const ready =
-      !!agent && !!options && !!account && !!draft.trim() && !uncertain;
+      !!agent &&
+      !!options &&
+      !!account &&
+      (!!draft.trim() || attachments.length > 0) &&
+      !uncertain;
     if (busy.current || !ready) {
       setRestoreDraftToken((n) => n + 1);
       return;
@@ -150,6 +194,7 @@ function CreateSessionScreen() {
         finish({
           session: result.session,
           draft,
+          attachments,
           modelId: choice.modelId,
           effort: choice.effort,
           modeId: choice.modeId,
@@ -316,7 +361,7 @@ function CreateSessionScreen() {
   }
 
   const form = (
-    <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+    <View style={{ flex: 1 }}>
       <NativeGroupedList
         style={{ flex: 1 }}
         accent={colors.accent}
@@ -385,7 +430,9 @@ function CreateSessionScreen() {
           ).map((id) => ({ id, title: id })),
         })}
         restoreDraftToken={restoreDraftToken}
-        onSend={({ nativeEvent }) => void submit(nativeEvent.text)}
+        onSend={({ nativeEvent }) =>
+          void submit(nativeEvent.text, nativeEvent.attachments)
+        }
         onComposerOptionChange={({ nativeEvent }) =>
           setChoice((current) => ({
             ...current,
@@ -394,7 +441,7 @@ function CreateSessionScreen() {
           }))
         }
       />
-    </KeyboardAvoidingView>
+    </View>
   );
 
   return form;

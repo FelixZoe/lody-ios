@@ -159,7 +159,7 @@ private final class ChatNavigationController: UIViewController {
   }
 }
 
-final class LodyChatView: ExpoView, UICollectionViewDelegateFlowLayout {
+final class LodyChatView: ExpoView, UICollectionViewDelegateFlowLayout, UIGestureRecognizerDelegate {
   let onSend = EventDispatcher()
   let onActivityPress = EventDispatcher()
   let onReconnect = EventDispatcher()
@@ -223,6 +223,10 @@ final class LodyChatView: ExpoView, UICollectionViewDelegateFlowLayout {
     collection.backgroundColor = .clear
     collection.alwaysBounceVertical = true
     collection.keyboardDismissMode = .interactive
+    let tap = UITapGestureRecognizer(target: self, action: #selector(dismissKeyboard))
+    tap.cancelsTouchesInView = false
+    tap.delegate = self
+    collection.addGestureRecognizer(tap)
     collection.contentInsetAdjustmentBehavior = .automatic
     collection.delegate = self
     collection.contentDidLayout = { [weak self] in
@@ -745,12 +749,29 @@ final class LodyChatView: ExpoView, UICollectionViewDelegateFlowLayout {
     }
     return window?.rootViewController
   }
+  @objc private func dismissKeyboard() { endEditing(true) }
+  func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+    !(touch.view is UITextView)
+  }
+  func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+  func setDraftKey(_ key: String) {
+    guard !key.isEmpty else { composer.onDraftChange = nil; return }
+    let store = LocalStore.shared
+    composer.onDraftChange = { text in
+      LocalStore.queue.async { try? store.write(key, text) }
+    }
+    LocalStore.queue.async { [weak self] in
+      guard let text = try? store.read(key), !text.isEmpty else { return }
+      DispatchQueue.main.async { self?.composer.setStoredDraft(text) }
+    }
+  }
   func setInitialDraft(_ text: String) {
     guard !hasInitialDraft else { return }
     hasInitialDraft = true
     composer.setInitialDraft(text)
     awaitingUserAnchor = !text.isEmpty
   }
+  func setInitialAttachments(_ json: String) { composer.setInitialAttachments(json) }
   func clearDraft(token: Int) { composer.clearDraft(token: token) }
   func restoreDraft(token: Int) { composer.restoreDraft(token: token) }
   func setComposerState(_ json: String) { composer.setComposerState(json) }

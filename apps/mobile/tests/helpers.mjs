@@ -110,7 +110,7 @@ export async function openTestSession({ failAppend = () => false } = {}) {
     return emitted;
   };
   const close = () => {
-    runtime.closeSession();
+    runtime.stopSessions();
     delete globalThis.__sessionClient;
   };
   return { runtime, server, pushUpdate, events, appends, close };

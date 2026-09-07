@@ -45,6 +45,8 @@ apps/mobile/
 
 登录后选择工作区，点击项目通过 `present()` 打开 Session 列表。目录由离屏 WebView 持续读取增量，刷新会重建同步运行时；点击会话可读取消息正文并发送纯文本，由同一 WebView 同步机器回复。单个目录读取限制为 8 MiB / 100 页，超过上限会明确失败；达到本轮输入上限后需重新同步；更大目录需要完善压缩与持久化策略。
 
+聊天正文由 runtime 持有：当前会话之外，最多保留 `MAX_BACKGROUND_SESSION_SYNCS = 3` 个后台会话，按用户最近打开的顺序淘汰；收到消息不会提升优先级。离开页面后继续同步并由 Swift 保存 SQLite 展示快照，返回保留的会话直接复用副本；被淘汰的会话先显示缓存，再重新 bootstrap。App 进入系统后台仍暂停 runtime，回到前台恢复保留的会话订阅。
+
 `pnpm ios`、`pnpm prebuild` 和 `pnpm bundle` 会先生成本地 WebView 资源；直接使用 Xcode 构建前先执行 `pnpm --filter @lody-ios/mobile native:assets`。原生资源包含 Flock 的许可证。
 
 ## Router、present 和 Native Kit

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { LoroDoc, LoroMap, LoroList, LoroText } from 'loro-crdt/base64';
-import { openTestSession } from './helpers.mjs';
+import { openTestSession, loadRuntime, frame } from './helpers.mjs';
 
 test('send persists user before dispatch; duplicate incremental imports preserve one ordered streaming reply', async () => {
   const server = new LoroDoc();
@@ -226,7 +226,7 @@ test('send persists user before dispatch; duplicate incremental imports preserve
     ['u', 'a'],
   );
   const oldRead = sessionRead;
-  runtime.closeSession();
+  runtime.stopSessions();
   oldRead(live({ body: frame(update) }, '5'));
   await assert.rejects(
     runtime.sendTurn({ sessionId: 's1', text: 'no' }),
@@ -265,7 +265,7 @@ test('send persists user before dispatch; duplicate incremental imports preserve
     1,
   );
   assert.equal(appends, 2);
-  runtime.closeSession();
+  runtime.stopSessions();
   delete globalThis.__sessionClient;
 });
 
@@ -345,8 +345,7 @@ test('projection carries stable item ids, tool summaries, and diff counts', asyn
 });
 
 test('unchanged entries keep their summary objects; prose is coalesced, status is not', async () => {
-  const { projectSession, resetProjection } = await loadProject();
-  resetProjection();
+  const { projectSession } = await loadProject();
   const doc = new LoroDoc();
   const first = doc.getList('history').pushContainer(new LoroMap());
   first.set('id', 'e1');
@@ -438,3 +437,280 @@ test('itemDetail 按需取回 blocks，超限分页，缺失不抛错', async ()
   );
   close();
 });
+
+test(
+  'background Sessions keep syncing, visits promote LRU, eviction aborts reads and preserves the final cache',
+  { timeout: 15000 },
+  async (t) => {
+    const servers = new Map();
+    const clients = [];
+    const events = [];
+    const waiters = [];
+    const ok = (result) => ({ ok: true, result });
+    const until = (predicate) =>
+      new Promise((resolve) => waiters.push({ predicate, resolve }));
+    const emit = (event) => {
+      const value = { ...event, data: JSON.parse(event.session) };
+      events.push(value);
+      for (const waiter of [...waiters]) {
+        if (waiter.predicate(value)) {
+          waiters.splice(waiters.indexOf(waiter), 1);
+          waiter.resolve(value);
+        }
+      }
+    };
+    globalThis.__sessionClient = class {
+      constructor({ url }) {
+        this.id = decodeURIComponent(url).split(':s:')[1];
+        clients.push(this);
+      }
+      async bootstrap({ signal }) {
+        this.signal = signal;
+        const server = servers.get(this.id) ?? new LoroDoc();
+        servers.set(this.id, server);
+        this.version = server.version();
+        return ok({
+          snapshotOffset: '1',
+          nextOffset: '1',
+          upToDate: true,
+          snapshot: { body: server.export({ mode: 'snapshot' }) },
+          updates: [],
+        });
+      }
+      readOnce(request) {
+        this.request = request;
+        return new Promise((resolve, reject) => {
+          this.resolve = resolve;
+          request.signal.addEventListener(
+            'abort',
+            () => reject(new Error('aborted')),
+            { once: true },
+          );
+        });
+      }
+      push(text) {
+        const server = servers.get(this.id);
+        let entry = server.getList('history').get(0);
+        if (!entry) {
+          entry = server.getList('history').pushContainer(new LoroMap());
+          // Deliberately collide across Sessions to exercise projection isolation.
+          entry.set('id', 'same-entry');
+          entry.set('role', 'assistant');
+          const item = entry
+            .setContainer('items', new LoroList())
+            .pushContainer(new LoroMap());
+          item.set('type', 'tool_call');
+          item.set('toolCallId', 'same-tool');
+        }
+        entry.get('items').get(0).set('title', text);
+        server.commit();
+        const body = frame(
+          server.export({ mode: 'update', from: this.version }),
+        );
+        this.version = server.version();
+        this.resolve(
+          ok({
+            nextOffset: String(Number(this.request.offset) + 1),
+            upToDate: true,
+            closed: false,
+            payload: { body },
+          }),
+        );
+      }
+    };
+    const runtime = await loadRuntime();
+    t.after(() => {
+      runtime.stopSessions();
+      delete globalThis.__sessionClient;
+    });
+    const open = async (id, workspace = 'w1') => {
+      const ready = until(
+        (e) =>
+          e.sessionId === id &&
+          e.type === 'session' &&
+          e.data.status === 'live',
+      );
+      await runtime.openSession(
+        id,
+        workspace,
+        async () => ({
+          token: 'synthetic',
+          gatewayBaseUrl: 'https://x.invalid',
+        }),
+        emit,
+        async () => {},
+      );
+      return ready;
+    };
+    const client = (id) => clients.findLast((c) => c.id === id);
+    await open('a');
+    await open('b');
+    await open('c');
+    await open('d');
+    assert.equal(clients.filter((c) => !c.signal.aborted).length, 4);
+    const background = until(
+      (e) =>
+        e.sessionId === 'a' &&
+        e.type === 'sessionCache' &&
+        e.data.entries.length,
+    );
+    client('a').push('changed while away');
+    const cached = await background;
+    assert.equal(cached.synced, true);
+    assert.equal(cached.data.entries[0].items[0].title, 'changed while away');
+    assert.equal(
+      events.filter((e) => e.sessionId === 'a' && e.type === 'session').length,
+      2,
+    );
+
+    await open('e');
+    assert.equal(
+      client('a').signal.aborted,
+      true,
+      'updates must not promote a',
+    );
+    const bCount = clients.filter((c) => c.id === 'b').length;
+    await open('b');
+    assert.equal(
+      clients.filter((c) => c.id === 'b').length,
+      bCount,
+      'retained replica needs no bootstrap',
+    );
+    await open('f');
+    assert.equal(client('c').signal.aborted, true, 'visiting b protects it');
+    assert.equal(client('b').signal.aborted, false);
+
+    const bUpdate = until(
+      (e) =>
+        e.sessionId === 'b' &&
+        e.type === 'sessionCache' &&
+        e.data.entries.length,
+    );
+    client('b').push('b version one');
+    const before = await bUpdate;
+    const fUpdate = until((e) => e.sessionId === 'f' && e.data.entries.length);
+    client('f').push('different session');
+    await fUpdate;
+    const reopened = await open('b');
+    assert.equal(reopened.data.entries[0].items[0].title, 'b version one');
+    assert.equal(
+      reopened.data.entries[0].items[0].rev,
+      before.data.entries[0].items[0].rev,
+    );
+    assert.equal(
+      (
+        await runtime.itemDetail({
+          sessionId: 'b',
+          entryId: 'same-entry',
+          itemId: 'same-tool',
+        })
+      ).rev,
+      before.data.entries[0].items[0].rev,
+    );
+
+    runtime.closeSession();
+    assert.equal(
+      clients.filter((c) => !c.signal.aborted).length,
+      3,
+      'no foreground means only three subscriptions',
+    );
+    await assert.rejects(
+      runtime.sendTurn({ sessionId: 'b', text: 'hidden' }),
+      /session_not_ready/,
+    );
+    const afterClose = until(
+      (e) =>
+        e.sessionId === 'b' &&
+        e.type === 'sessionCache' &&
+        e.data.entries[0]?.items[0]?.title === 'after close',
+    );
+    client('b').push('after close');
+    await afterClose;
+    const count = clients.length;
+    assert.equal(
+      (await open('b')).data.entries[0].items[0].title,
+      'after close',
+    );
+    assert.equal(clients.length, count);
+
+    // Queue an update on the oldest Session and evict before its cache timer fires.
+    client('e').push('last before eviction');
+    await new Promise((resolve) => setImmediate(resolve));
+    await open('g');
+    await open('h');
+    assert.equal(client('e').signal.aborted, true);
+    assert.ok(
+      events.some(
+        (e) =>
+          e.sessionId === 'e' &&
+          e.type === 'sessionCache' &&
+          e.data.entries[0]?.items[0]?.title === 'last before eviction',
+      ),
+    );
+    const oldClients = [...clients];
+    await open('b', 'other-workspace');
+    assert.ok(oldClients.every((c) => c.signal.aborted));
+    runtime.stopSessions();
+    assert.ok(clients.every((c) => c.signal.aborted));
+  },
+);
+
+test(
+  'eviction during authorization cannot start a late bootstrap',
+  { timeout: 5000 },
+  async (t) => {
+    const bootstraps = [];
+    globalThis.__sessionClient = class {
+      constructor({ url }) {
+        this.url = url;
+      }
+      async bootstrap() {
+        bootstraps.push(this.url);
+        return { ok: false, result: { code: 'synthetic_offline' } };
+      }
+    };
+    const runtime = await loadRuntime();
+    t.after(() => {
+      runtime.stopSessions();
+      delete globalThis.__sessionClient;
+    });
+    let authorize;
+    const grant = new Promise((resolve) => {
+      authorize = resolve;
+    });
+    const events = [];
+    for (const id of ['late-a', 'late-b', 'late-c', 'late-d', 'late-e'])
+      await runtime.openSession(
+        id,
+        'w1',
+        () => grant,
+        (e) => events.push(e),
+        async () => {},
+      );
+    authorize({ token: 'synthetic', gatewayBaseUrl: 'https://x.invalid' });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(bootstraps.length, 4);
+    assert.ok(
+      bootstraps.every((url) => !decodeURIComponent(url).endsWith(':late-a')),
+    );
+    assert.ok(
+      events
+        .filter((e) => e.sessionId === 'late-a')
+        .every((e) => JSON.parse(e.session).status === 'syncing'),
+    );
+    const before = bootstraps.length;
+    await runtime.openSession(
+      'late-e',
+      'w1',
+      () => grant,
+      () => {},
+      async () => {},
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(
+      bootstraps.length,
+      before + 1,
+      'opening an offline retained Session retries bootstrap',
+    );
+  },
+);

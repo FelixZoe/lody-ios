@@ -4,6 +4,7 @@ import SQLite3
 /// Access only on queue. Display projections, never credentials or CRDT state.
 final class LocalStore {
   static let queue = DispatchQueue(label: "app.innei.lody.local-store", qos: .userInitiated)
+  static let shared = LocalStore()
   private var db: OpaquePointer?
   private let url: URL
 
@@ -56,6 +57,11 @@ final class LocalStore {
     }
     try open()
     try execute("INSERT INTO cache VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", [key, value])
+  }
+  func writeSession(_ session: String, userId: String, workspace: String, id: String) throws {
+    let data = try JSONSerialization.data(withJSONObject: [userId, workspace, id], options: [.withoutEscapingSlashes])
+    guard let suffix = String(data: data, encoding: .utf8) else { return }
+    try write("session:" + suffix, session)
   }
   func startup() throws -> [String: String] {
     let started = ProcessInfo.processInfo.systemUptime

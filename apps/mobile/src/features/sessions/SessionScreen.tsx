@@ -5,6 +5,7 @@ import { View, Alert } from 'react-native';
 import { usePalette } from '@/theme/palette';
 import {
   NativeChat,
+  type ChatDraftAttachment,
   sendSessionTurn,
   sessionCreationOptions,
 } from '@lody-ios/kit';
@@ -19,13 +20,10 @@ import { permissionPage } from './detail/permissionPage';
 import { useProcessSheet } from './detail/processPage';
 import type { ModelChoice } from './ModelScreen';
 
-type Attachments = Parameters<
-  NonNullable<React.ComponentProps<typeof NativeChat>['onSend']>
->[0]['nativeEvent']['attachments'];
-
 type SessionParams = {
   session: Session;
   initialDraft?: string;
+  initialAttachments?: ChatDraftAttachment[];
   modelId?: string;
   effort?: string;
   modeId?: string;
@@ -33,7 +31,14 @@ type SessionParams = {
 
 function SessionScreen() {
   const {
-    params: { session, initialDraft, modelId, effort, modeId },
+    params: {
+      session,
+      initialDraft,
+      initialAttachments,
+      modelId,
+      effort,
+      modeId,
+    },
   } = usePageRuntime<SessionParams>();
   const { account } = useAuth(),
     colors = usePalette();
@@ -146,12 +151,14 @@ function SessionScreen() {
     }
   }, [snapshot]);
 
+  const hasInitialDraft = !!initialDraft || !!initialAttachments?.length;
   useEffect(() => {
-    if (autoSent.current || !initialDraft || snapshot.status !== 'live') return;
+    if (autoSent.current || !hasInitialDraft || snapshot.status !== 'live')
+      return;
     autoSent.current = true;
-    void submit(initialDraft);
+    void submit(initialDraft ?? '', initialAttachments);
     // Dispatch once when the new session first goes live; never replay on reconnect.
-  }, [snapshot.status, initialDraft]);
+  }, [snapshot.status, initialDraft, initialAttachments, hasInitialDraft]);
 
   const onActivityPress = (entryId: string, itemId: string) => {
     if (snapshot.status !== 'live') {
@@ -178,7 +185,10 @@ function SessionScreen() {
     });
   };
 
-  async function submit(draft: string, attachments: Attachments = []) {
+  async function submit(
+    draft: string,
+    attachments: ChatDraftAttachment[] = [],
+  ) {
     if (busy.current) return;
     if (
       !account ||
@@ -260,7 +270,7 @@ function SessionScreen() {
       !sending &&
       !uncertain &&
       !currentSession.archived &&
-      (!initialDraft || autoSent.current),
+      (!hasInitialDraft || autoSent.current),
     canSend,
     sending,
     notice: uncertain
@@ -269,11 +279,13 @@ function SessionScreen() {
         ? '同步已停止 · 内容可能不是最新'
         : disconnected
           ? '连接已暂停 · 点此重新同步'
-          : snapshot.status !== 'live'
-            ? '正在连接…'
-            : '',
+          : '',
     reconnect: disconnected || overflow,
-    placeholder: currentSession.archived ? '此会话已归档' : '给 Lody 发消息…',
+    placeholder: currentSession.archived
+      ? '此会话已归档'
+      : !disconnected && !overflow && snapshot.status !== 'live'
+        ? '正在连接，可先输入…'
+        : '给 Lody 发消息…',
   });
   const efforts = activeChoice.modelId
     ? (capability?.reasoningEfforts[activeChoice.modelId] ?? [])
@@ -346,6 +358,12 @@ function SessionScreen() {
         composerJSON={composerJSON}
         composerOptionsJSON={composerOptionsJSON}
         initialDraft={initialDraft}
+        draftKey={
+          account && selected
+            ? `draft:${account.user.id}:${selected.id}:${session.id}`
+            : ''
+        }
+        initialAttachmentsJSON={JSON.stringify(initialAttachments ?? [])}
         clearDraftToken={clearDraftToken}
         restoreDraftToken={restoreDraftToken}
         emptyText={

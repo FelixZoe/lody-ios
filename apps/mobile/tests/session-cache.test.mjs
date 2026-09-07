@@ -30,8 +30,8 @@ test('session history restores before network, survives reconnect, and yields to
       new Promise((resolve) => {
         restore = () => resolve(db.get(key) ?? null);
       }),
-    writeLocalValue: async (key, value) => {
-      db.set(key, value);
+    writeLocalValue: async () => {
+      assert.fail('page must not persist runtime snapshots');
     },
     clearLocalValues: async () => db.clear(),
     showToast() {},
@@ -75,6 +75,11 @@ test('session history restores before network, survives reconnect, and yields to
       state: 'live',
       session: JSON.stringify({ v: 1, status, revision, entries: values }),
     });
+  // Swift owns persistence now; the hook only reads its account-scoped snapshot.
+  db.set(
+    'session:["a","w","s"]',
+    JSON.stringify({ v: 1, status: 'live', revision: 100, entries }),
+  );
   mount();
   emit('live', 100, entries);
   await tick();

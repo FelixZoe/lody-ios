@@ -20,7 +20,7 @@ const ComposerView: ComponentType<
 > = requireNativeView('LodyKit', 'LodyComposerView');
 
 export function NativeComposer({ style, ...props }: Props) {
-  const [height, setHeight] = useState(64);
+  const [height, setHeight] = useState(80);
   return (
     <ComposerView
       {...props}

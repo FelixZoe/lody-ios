@@ -30,6 +30,7 @@ export async function newSession(
         {
           session: result.value.session,
           initialDraft: result.value.draft,
+          initialAttachments: result.value.attachments,
           modelId: result.value.modelId,
           effort: result.value.effort,
           modeId: result.value.modeId,

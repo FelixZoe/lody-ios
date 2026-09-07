@@ -378,7 +378,6 @@ final class LodyGroupedList: ExpoView, UICollectionViewDelegate, UISearchBarDele
   }
 
   func setSections(_ value: [LodyListSection]) {
-    let selectedID = collection.indexPathsForSelectedItems?.first.flatMap { dataSource.itemIdentifier(for: $0) }
     let previous = dataSource.snapshot()
     sections = value
     rowsByID = Dictionary(value.flatMap { section in
@@ -400,9 +399,6 @@ final class LodyGroupedList: ExpoView, UICollectionViewDelegate, UISearchBarDele
     }
     dataSource.apply(snapshot, animatingDifferences: window != nil && !previous.sectionIdentifiers.isEmpty && !UIAccessibility.isReduceMotionEnabled) { [weak self] in
       guard let self else { return }
-      if let selectedID, let index = self.dataSource.indexPath(for: selectedID) {
-        self.collection.selectItem(at: index, animated: false, scrollPosition: [])
-      }
       for kind in [UICollectionView.elementKindSectionHeader, UICollectionView.elementKindSectionFooter] {
         for index in self.collection.indexPathsForVisibleSupplementaryElements(ofKind: kind) {
           if let view = self.collection.supplementaryView(forElementKind: kind, at: index) as? SectionSupplementaryCell,
