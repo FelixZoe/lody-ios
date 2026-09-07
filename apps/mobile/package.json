@@ -5,8 +5,9 @@
   "main": "index.js",
   "scripts": {
     "start": "expo start --dev-client",
-    "ios": "pnpm native:assets && expo run:ios",
-    "prebuild": "pnpm native:assets && expo prebuild --platform ios",
+    "ios": "pnpm prebuild && pnpm pods && expo run:ios --no-install",
+    "prebuild": "pnpm native:assets && expo prebuild --platform ios --no-install",
+    "pods": "cd ios && PATH=\"$(brew --prefix ruby)/bin:$PATH\" bundle exec pod install",
     "bundle": "pnpm native:assets && expo export --platform ios --output-dir .expo/export-check",
     "typecheck": "tsc --noEmit",
     "native:assets": "node scripts/build-decoder.mjs"
@@ -29,7 +30,6 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
-    "react-native-markdown-display": "7.0.2",
     "react-native-reanimated": "4.5.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",

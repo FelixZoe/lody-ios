@@ -44,3 +44,9 @@ await writeFile(
   output + '/Loro-LICENSE.txt',
   await readFile(root + '../../node_modules/loro-crdt/LICENSE'),
 );
+for (const name of ['MarkdownView', 'Litext']) {
+  await writeFile(
+    output + '/' + name + '-LICENSE.txt',
+    await readFile(root + 'modules/lody-kit/licenses/' + name + '-LICENSE.txt'),
+  );
+}

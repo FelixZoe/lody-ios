@@ -1,14 +1,5 @@
 import UIKit
 
-private final class ChatSelectionView: UITextView {
-  var onDismiss: (() -> Void)?
-  override func resignFirstResponder() -> Bool {
-    let resigned = super.resignFirstResponder()
-    if resigned { onDismiss?() }
-    return resigned
-  }
-}
-
 /// TextKit lays out once per content/width change. Fade ticks only draw glyphs;
 /// they never rebuild attributed strings, remeasure cells or refresh the list.
 final class ChatTextView: UIView {
@@ -18,9 +9,6 @@ final class ChatTextView: UIView {
   private var fade = ChatTextFade()
   private var timer: Timer?
   private var shineEnabled = false
-  private var selectionView: ChatSelectionView?
-  private var selectionRange: NSRange?
-  var onSelectionChange: ((Bool) -> Void)?
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -35,94 +23,11 @@ final class ChatTextView: UIView {
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
   func setText(_ text: NSAttributedString, animate: Bool = false, reset: Bool = false) {
-    if reset { endSelection() }
-    if let range = selectionRange {
-      let end = NSMaxRange(range)
-      if text.length < end || (storage.string as NSString).substring(to: end) != (text.string as NSString).substring(to: end) {
-        endSelection()
-      }
-    }
     fade.update(text.string, animate: animate && window != nil && !UIAccessibility.isReduceMotionEnabled,
       at: CACurrentMediaTime(), reset: reset)
     if !storage.isEqual(to: text) { storage.setAttributedString(text) }
     setNeedsDisplay()
     pokeDisplayTimer()
-  }
-
-  func block(at point: CGPoint) -> (range: NSRange, text: String)? {
-    guard storage.length > 0, bounds.contains(point) else { return nil }
-    layout(width: bounds.width)
-    let glyph = manager.glyphIndex(for: point, in: container)
-    guard glyph < manager.numberOfGlyphs else { return nil }
-    let character = manager.characterIndexForGlyph(at: glyph)
-    var range = NSRange(location: 0, length: 0)
-    if storage.attribute(.chatBlock, at: character, longestEffectiveRange: &range,
-                         in: NSRange(location: 0, length: storage.length)) == nil {
-      range = (storage.string as NSString).paragraphRange(for: NSRange(location: character, length: 0))
-    }
-    while range.length > 0 && (storage.string as NSString).substring(with: NSRange(location: NSMaxRange(range) - 1, length: 1)) == "\n" {
-      range.length -= 1
-    }
-    guard range.length > 0 else { return nil }
-    return (range, (storage.string as NSString).substring(with: range))
-  }
-
-  func blockRect(_ range: NSRange) -> CGRect {
-    layout(width: bounds.width)
-    let glyphs = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-    let rect = manager.boundingRect(forGlyphRange: glyphs, in: container)
-    return CGRect(x: 0, y: rect.minY, width: bounds.width, height: rect.height)
-  }
-
-  func selectBlock(_ range: NSRange, text: String) {
-    guard NSMaxRange(range) <= storage.length, (storage.string as NSString).substring(with: range) == text else { return }
-    endSelection()
-    let view = ChatSelectionView()
-    view.isEditable = false
-    view.isSelectable = true
-    view.isScrollEnabled = false
-    view.backgroundColor = .clear
-    view.textContainerInset = .zero
-    view.textContainer.lineFragmentPadding = 0
-    view.contentInsetAdjustmentBehavior = .never
-    view.attributedText = storage.attributedSubstring(from: range)
-    view.accessibilityIdentifier = "chat-block-selection"
-    view.onDismiss = { [weak self] in self?.endSelection() }
-    selectionRange = range
-    selectionView = view
-    onSelectionChange?(true)
-    isUserInteractionEnabled = true
-    addSubview(view)
-    setNeedsLayout()
-    layoutIfNeeded()
-    view.becomeFirstResponder()
-    view.selectedRange = NSRange(location: 0, length: view.attributedText.length)
-    let menu = UIEditMenuInteraction(delegate: nil)
-    view.addInteraction(menu)
-    menu.presentEditMenu(with: UIEditMenuConfiguration(identifier: nil, sourcePoint: CGPoint(x: view.bounds.midX, y: 0)))
-    setNeedsDisplay()
-  }
-
-  func endSelection() {
-    let view = selectionView
-    selectionView = nil
-    selectionRange = nil
-    view?.onDismiss = nil
-    _ = view?.resignFirstResponder()
-    view?.removeFromSuperview()
-    if view != nil { onSelectionChange?(false) }
-    isUserInteractionEnabled = false
-    setNeedsDisplay()
-  }
-
-  override func layoutSubviews() {
-    super.layoutSubviews()
-    guard let view = selectionView, let range = selectionRange else { return }
-    layout(width: bounds.width)
-    let glyphs = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-    let line = manager.lineFragmentRect(forGlyphAt: glyphs.location, effectiveRange: nil)
-    let size = view.sizeThatFits(CGSize(width: bounds.width, height: .greatestFiniteMagnitude))
-    view.frame = CGRect(x: 0, y: line.minY, width: bounds.width, height: size.height)
   }
 
   func setShine(_ on: Bool) {
@@ -134,7 +39,6 @@ final class ChatTextView: UIView {
   override func didMoveToWindow() {
     super.didMoveToWindow()
     if window == nil {
-      endSelection()
       timer?.invalidate(); timer = nil
       fade.update(storage.string, animate: false, at: CACurrentMediaTime(), reset: true)
     }
@@ -258,12 +162,6 @@ final class ChatTextView: UIView {
   override func draw(_ rect: CGRect) {
     guard let context = UIGraphicsGetCurrentContext() else { return }
     layout(width: bounds.width)
-    if let view = selectionView {
-      let clip = UIBezierPath(rect: bounds)
-      clip.append(UIBezierPath(rect: view.frame))
-      clip.usesEvenOddFillRule = true
-      clip.addClip()
-    }
     // UIView retains this drawing while its parent scrolls. Draw the whole text
     // layer so newly exposed lines are already present in its backing store.
     let visible = manager.glyphRange(forBoundingRect: bounds, in: container)

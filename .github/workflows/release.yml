@@ -146,8 +146,16 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' ios/Lody/Info.plist)" = "$BUILD_NUMBER"
 
       - name: Install CocoaPods
-        working-directory: ${{ env.MOBILE_DIR }}/ios
-        run: pod install --deployment || pod install
+        working-directory: ${{ env.MOBILE_DIR }}
+        run: |
+          set -euo pipefail
+          if command -v brew >/dev/null 2>&1 && brew --prefix ruby >/dev/null 2>&1; then
+            export PATH="$(brew --prefix ruby)/bin:$PATH"
+          fi
+          bundle config set --local path 'vendor/bundle'
+          bundle install
+          cd ios
+          bundle exec pod install
 
       - name: Import distribution certificate
         env:

@@ -1,19 +1,14 @@
 import ExpoModulesCore
+import MarkdownView
 import UIKit
 
-private final class ChatCell: UICollectionViewCell, UIContextMenuInteractionDelegate {
+final class ChatCell: UICollectionViewCell, UIContextMenuInteractionDelegate {
   let label = ChatTextView()
   let bubble = UIView()
   let icon = UIImageView()
   let spinner = UIActivityIndicatorView(style: .medium)
   var row: ChatRow?
   var onInteraction: (() -> Void)?
-  private var menuRange: NSRange?
-  private var pendingSelection: (() -> Void)?
-  override var isAccessibilityElement: Bool {
-    get { !label.isUserInteractionEnabled && super.isAccessibilityElement }
-    set { super.isAccessibilityElement = newValue }
-  }
   override init(frame: CGRect) {
     super.init(frame: frame)
     bubble.backgroundColor = .secondarySystemBackground
@@ -26,7 +21,6 @@ private final class ChatCell: UICollectionViewCell, UIContextMenuInteractionDele
     icon.contentMode = .center
     isAccessibilityElement = true
     contentView.addInteraction(UIContextMenuInteraction(delegate: self))
-    label.onSelectionChange = { [weak self] active in self?.isAccessibilityElement = !active }
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
   func configure(_ row: ChatRow, text: NSAttributedString) {
@@ -46,37 +40,14 @@ private final class ChatCell: UICollectionViewCell, UIContextMenuInteractionDele
   override func prepareForReuse() {
     super.prepareForReuse()
     label.setShine(false)
-    label.endSelection()
-    pendingSelection = nil
   }
   func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
-    guard let row, !label.isUserInteractionEnabled else { return nil }
-    menuRange = nil
-    if row.kind == "user" {
-      guard bubble.frame.contains(location) else { return nil }
-      onInteraction?()
-      return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
-        UIMenu(children: [UIAction(title: "复制", image: UIImage(systemName: "doc.on.doc")) { _ in
-          UIPasteboard.general.string = row.text
-        }])
-      }
-    }
-    guard row.kind == "text" || row.kind == "thought",
-      let block = label.block(at: contentView.convert(location, to: label)) else { return nil }
+    guard let row, row.kind == "user", bubble.frame.contains(location) else { return nil }
     onInteraction?()
-    menuRange = block.range
-    return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
-      UIMenu(children: [
-        UIAction(title: "选择此块", image: UIImage(systemName: "selection.pin.in.out")) { [weak self] _ in
-          self?.pendingSelection = { [weak self] in
-            guard let self, self.row?.id == row.id else { return }
-            self.label.selectBlock(block.range, text: block.text)
-          }
-        },
-        UIAction(title: "复制此块", image: UIImage(systemName: "doc.on.doc")) { _ in
-          UIPasteboard.general.string = block.text
-        },
-      ])
+    return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
+      UIMenu(children: [UIAction(title: "复制", image: UIImage(systemName: "doc.on.doc")) { _ in
+        UIPasteboard.general.string = row.text
+      }])
     }
   }
 
@@ -93,19 +64,11 @@ private final class ChatCell: UICollectionViewCell, UIContextMenuInteractionDele
   private func contextPreview() -> UITargetedPreview? {
     let parameters = UIPreviewParameters()
     parameters.backgroundColor = .systemBackground
-    let rect = menuRange.map { label.convert(label.blockRect($0), to: contentView) } ?? bubble.frame
+    let rect = bubble.frame
     guard let preview = contentView.resizableSnapshotView(from: rect, afterScreenUpdates: false, withCapInsets: .zero) else { return nil }
-    parameters.visiblePath = UIBezierPath(roundedRect: CGRect(origin: .zero, size: rect.size), cornerRadius: row?.kind == "user" ? 19 : 4)
+    parameters.visiblePath = UIBezierPath(roundedRect: CGRect(origin: .zero, size: rect.size), cornerRadius: 19)
     return UITargetedPreview(view: preview, parameters: parameters,
       target: UIPreviewTarget(container: contentView, center: CGPoint(x: rect.midX, y: rect.midY)))
-  }
-
-  func contextMenuInteraction(_ interaction: UIContextMenuInteraction, willEndFor configuration: UIContextMenuConfiguration,
-                             animator: (any UIContextMenuInteractionAnimating)?) {
-    let select = pendingSelection
-    pendingSelection = nil
-    if let animator { animator.addCompletion { DispatchQueue.main.async { select?() } } }
-    else { select?() }
   }
 
   static func leading(_ row: ChatRow) -> CGFloat {
@@ -172,6 +135,7 @@ final class LodyChatView: ExpoView, UICollectionViewDelegateFlowLayout, UIGestur
   private let collection: ChatCollectionView
   private let measuringText = ChatTextView()
   private var measurements: [String: (width: CGFloat, text: NSAttributedString, height: CGFloat)] = [:]
+  private let store = ChatMarkdownStore(traits: .current)
   private let composer = ChatComposerView(frame: .zero)
   private let bottomButton = UIButton(type: .system)
   private var imageWorkspace = ""
@@ -187,7 +151,6 @@ final class LodyChatView: ExpoView, UICollectionViewDelegateFlowLayout, UIGestur
   private var rendering = false
   private var framePending = false
   private var rows: [String: ChatRow] = [:]
-  private let markdown = ChatMarkdown()
   private var update: DispatchWorkItem?
   private var pendingEntries: String?
   private let preparation = DispatchQueue(label: "app.innei.lody.chat", qos: .userInitiated)
@@ -236,11 +199,22 @@ final class LodyChatView: ExpoView, UICollectionViewDelegateFlowLayout, UIGestur
     }
     collection.register(ChatImageCell.self, forCellWithReuseIdentifier: "image")
     collection.register(ChatCell.self, forCellWithReuseIdentifier: "message")
+    collection.register(ChatMarkdownCell.self, forCellWithReuseIdentifier: "markdown")
     dataSource = UICollectionViewDiffableDataSource<String, String>(collectionView: collection) { [weak self] collection, index, id in
       guard let self, let row = self.rows[id] else { return nil }
       if row.image != nil {
         let cell = collection.dequeueReusableCell(withReuseIdentifier: "image", for: index) as! ChatImageCell
         cell.configure(row, workspace: self.imageWorkspace, session: self.imageSession)
+        return cell
+      }
+      if row.kind == "text" || row.kind == "thought" {
+        let cell = collection.dequeueReusableCell(withReuseIdentifier: "markdown", for: index) as! ChatMarkdownCell
+        let secondary = row.kind == "thought"
+        cell.onLink = { url in
+          guard ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return }
+          UIApplication.shared.open(url)
+        }
+        cell.configure(row, content: self.store.content(id: id, text: row.text, secondary: secondary), theme: self.store.theme(secondary: secondary))
         return cell
       }
       let cell = collection.dequeueReusableCell(withReuseIdentifier: "message", for: index) as! ChatCell
@@ -415,7 +389,7 @@ final class LodyChatView: ExpoView, UICollectionViewDelegateFlowLayout, UIGestur
   }
 
   private func applyDynamicType() {
-    markdown.dynamicTraits = traitCollection
+    store.apply(traits: traitCollection)
     measurements.removeAll()
     empty.font = .dynamic(of: 16, compatibleWith: traitCollection)
     guard dataSource != nil else { return }
@@ -536,11 +510,11 @@ final class LodyChatView: ExpoView, UICollectionViewDelegateFlowLayout, UIGestur
     rendering = true
     stream.advance()
     let entries = stream.presentation
-    let markdown = self.markdown
+    let parser = store.parser
     preparation.async { [weak self] in
       for entry in entries.suffix(2) {
         for item in entry.items where item.type == "text" || item.type == "thought" {
-          markdown.prepare(item.text ?? "")
+          _ = parser.parse(item.text ?? "")
         }
       }
       DispatchQueue.main.async { [weak self] in
@@ -554,8 +528,6 @@ final class LodyChatView: ExpoView, UICollectionViewDelegateFlowLayout, UIGestur
   }
 
   private func text(for row: ChatRow) -> NSAttributedString {
-    markdown.dynamicTraits = traitCollection
-    if row.kind == "text" || row.kind == "thought" { return markdown.text(row.text, secondary: row.kind == "thought") }
     let scale = UIFont.dynamicScale(compatibleWith: traitCollection)
     let paragraph = NSMutableParagraphStyle()
     let lineHeight = (row.kind == "user" ? 25 : 18) * scale
@@ -596,6 +568,7 @@ final class LodyChatView: ExpoView, UICollectionViewDelegateFlowLayout, UIGestur
     let previous = rows
     rows = Dictionary(projected.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
     measurements = measurements.filter { rows[$0.key] != nil }
+    store.retain(Set(rows.keys))
     var snapshot = NSDiffableDataSourceSnapshot<String, String>()
     let grouped = Dictionary(grouping: projected, by: \.entryID)
     for entry in transcript.entries {
@@ -716,8 +689,11 @@ final class LodyChatView: ExpoView, UICollectionViewDelegateFlowLayout, UIGestur
       let height = ChatImageCell.size(image, width: width).height
       return height
     }
-    let text = text(for: row)
     let textWidth = ChatCell.textWidth(row, width: width)
+    if row.kind == "text" || row.kind == "thought" {
+      return store.height(id: row.id, text: row.text, secondary: row.kind == "thought", width: textWidth)
+    }
+    let text = text(for: row)
     if let cached = measurements[row.id], cached.width == textWidth, cached.text.isEqual(to: text) {
       return cached.height
     }

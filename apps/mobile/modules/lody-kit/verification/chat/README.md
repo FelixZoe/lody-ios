@@ -23,24 +23,18 @@ check multiline input and interactive keyboard dismissal; repeat in dark mode.
 
 The RN page owns navigation and cloud actions; LodyKit owns collection cells,
 Markdown, text pacing, expansion, measured row heights, keyboard and input state.
-Foundation parses Markdown, including unfinished input; the active tail is parsed
-on a serial background queue. Attributed text is cached; each cell reuses TextKit
-layout until its content or width changes. Presentation pacing is inspired by FlowDown's
-`BalancedEmitter`; no FlowDown code or dependencies are vendored.
+MarkdownView parses Markdown, including unfinished input; the active tail is parsed
+on a serial background queue and parse results are cached by source text. Row heights
+come from an offscreen `MarkdownTextView` per row that keeps its document across width
+changes. Presentation pacing is inspired by FlowDown's `BalancedEmitter`; MarkdownView
+and Litext are SPM dependencies pulled in through `cocoapods-spm`.
 
-Initial scope: native text, headings, lists, emphasis and unhighlighted code.
-User bubbles have a native copy menu. Assistant paragraphs, lists and code blocks
-support block copy and native text selection, including draggable selection handles.
-Link actions, syntax highlighting, rich tables and math are deferred.
-
-Copy/selection verification in the local Debug preview (never sends cloud messages):
-
-```sh
-python3 apps/mobile/modules/lody-kit/verification/chat/selection.py SIMULATOR_UDID --output /tmp/chat-selection
-```
-
-This checks the real pasteboard for a user message, a complete code block and a
-partial native selection, while recording menu and selection screenshots/video.
+Assistant `text` and `thought` rows render through MarkdownView (Litext + cmark-gfm):
+headings, lists, task lists, blockquotes, tables, highlighted code blocks with a copy
+button, links and math. User bubbles have a native copy menu; assistant text uses
+Litext's own double-tap (word) and triple-tap (line) selection with the system edit menu. Per-glyph fade-in is
+drawn by `ChatFadeLabelView`, a `TextLabelView` subclass injected into
+`MarkdownTextView`.
 
 Scroll drawing regression (with a booted iOS Simulator):
 

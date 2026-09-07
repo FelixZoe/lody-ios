@@ -17,7 +17,11 @@ const config: ExpoConfig = {
       NSPhotoLibraryUsageDescription: '选择照片作为消息附件。',
     },
   },
-  plugins: ['expo-router', ['expo-dev-client', { toolsButton: false }]],
+  plugins: [
+    'expo-router',
+    ['expo-dev-client', { toolsButton: false }],
+    './plugins/withMarkdownView',
+  ],
   experiments: { typedRoutes: true, reactCompiler: true },
   runtimeVersion: { policy: 'fingerprint' },
   updates: {
