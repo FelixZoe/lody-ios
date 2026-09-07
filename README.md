@@ -181,4 +181,3 @@ Lody iOS 的实现离不开以下优秀的开源项目与创作者的支持：
 - **[YiTong](https://github.com/onevcat/YiTong)**：感谢 [onevcat](https://github.com/onevcat) 的优秀封装，使优雅高效的原生代码差异渲染在 iOS 上成为可能。
 - **[@pierre/diffs](https://github.com/pierrecomputer/pierre/tree/main/packages/diffs)**：提供了出色的词级高亮差异算法与现代化 Web diff 体验。
 - **[Loro](https://github.com/loro-dev/loro)**：高效稳定的下一代 CRDT 状态协调技术。
-- **[NewsLiquid](https://github.com/Innei)**：提供了优雅的 `definePage` 声明式路由与视图呈现架构。

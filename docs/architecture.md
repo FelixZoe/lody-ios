@@ -1,6 +1,6 @@
 # Router、present() 与 LodyKit
 
-这套结构来自 NewsLiquid 的 `src/presentation`，保留它的 API 和原生路由呈现方式。Lody 的主题采用 Expo Router Theme，原生关闭控件由 LodyKit 提供。
+这套结构基于声明式的 `src/presentation`，统一管理路由与原生呈现方式。Lody 的主题采用 Expo Router Theme，原生关闭控件由 LodyKit 提供。
 
 ## 页面如何组织
 
