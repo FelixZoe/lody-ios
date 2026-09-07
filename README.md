@@ -12,6 +12,8 @@
   </p>
 </div>
 
+![Lody iOS 原生体验与会话协同](https://github.com/user-attachments/assets/f5576efa-4ff1-44fe-ab66-9b2eddecb11e)
+
 ---
 
 ## 概述
