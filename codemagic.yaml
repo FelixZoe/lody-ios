@@ -44,8 +44,3 @@ workflows:
     artifacts:
       - apps/mobile/ios/build/**
       - $HOME/Library/Developer/Xcode/DerivedData/**/Build/Products/**/*.app
-    publishing:
-      email:
-        notify:
-          success: false
-          failure: false
