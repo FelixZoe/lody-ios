@@ -1,6 +1,6 @@
 workflows:
   ios-debug:
-    name: Lody iOS Debug
+    name: Lody iOS Unsigned IPA
     max_build_duration: 60
     instance_type: mac_mini_m2
     environment:
@@ -27,20 +27,36 @@ workflows:
           bundle install
           cd ios
           bundle exec pod install --repo-update
-      - name: Build unsigned iOS app
+      - name: Build unsigned iPhone app
         script: |
+          set -e
           cd apps/mobile/ios
           WORKSPACE=$(find . -maxdepth 1 -name "*.xcworkspace" | head -n 1)
           SCHEME=$(xcodebuild -workspace "$WORKSPACE" -list -json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["workspace"]["schemes"][0])')
+          BUILD_DIR="$CM_BUILD_DIR/build/iphoneos"
           xcodebuild \
             -workspace "$WORKSPACE" \
             -scheme "$SCHEME" \
-            -configuration Debug \
-            -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$BUILD_DIR" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
             build
+
+          APP_PATH=$(find "$BUILD_DIR/Build/Products/Release-iphoneos" -maxdepth 1 -name "*.app" | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "No .app found in Release-iphoneos output"
+            exit 1
+          fi
+
+          mkdir -p "$CM_BUILD_DIR/ipa/Payload"
+          cp -R "$APP_PATH" "$CM_BUILD_DIR/ipa/Payload/"
+          cd "$CM_BUILD_DIR/ipa"
+          /usr/bin/zip -qry "$CM_BUILD_DIR/Lody-unsigned.ipa" Payload
+          echo "Unsigned IPA created at $CM_BUILD_DIR/Lody-unsigned.ipa"
     artifacts:
-      - apps/mobile/ios/build/**
-      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/Products/**/*.app
+      - Lody-unsigned.ipa
+      - build/iphoneos/Build/Products/Release-iphoneos/*.app
