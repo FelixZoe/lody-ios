@@ -59,6 +59,30 @@ assert(transcript.rows(processEntryID: "steps").map(\.itemID) == ["first", "thin
 assert(transcript.rows(processEntryID: "steps", processStartID: "think1").map(\.itemID) == ["think1", "read"], "An open segment must not change scope on completion")
 print("Chat folding: live text boundaries, scoped process, and conclusion-only completion passed")
 
+let completedWithNotice = """
+[{"id":"done","role":"assistant","status":"pending","finished":true,
+"fileDiffs":[{"path":"docs/.diff-check.md","add":1,"del":1}],
+"items":[{"itemId":"tool","type":"tool_call","status":"completed"},{"itemId":"answer","type":"text","text":"done"}]},
+{"id":"warning","role":"system","status":"pending","finished":false,
+"items":[{"itemId":"notice","type":"system_notice","name":"agent_warning"}]}]
+"""
+let noticeEntries = try JSONDecoder().decode([ChatEntry].self, from: Data(completedWithNotice.utf8))
+let noticeTranscript = ChatTranscript(entries: noticeEntries)
+assert(!noticeEntries.contains(where: \.isRunning), "A system notice is not an active assistant turn")
+assert(noticeTranscript.rows().map(\.kind) == ["summary", "text", "changes"])
+assert(noticeTranscript.rows().last?.fileDiff?.path == "docs/.diff-check.md")
+assert(noticeTranscript.rows().last?.fileDiff?.add == 1)
+assert(noticeTranscript.rows(processEntryID: "warning").isEmpty)
+assert(!noticeTranscript.rows(processEntryID: "done").contains { $0.kind == "changes" })
+let cachedNotice = completedWithNotice.replacingOccurrences(of: ",\"name\":\"agent_warning\"", with: "")
+let cachedEntries = try JSONDecoder().decode([ChatEntry].self, from: Data(cachedNotice.utf8))
+assert(ChatTranscript(entries: cachedEntries).rows() == noticeTranscript.rows())
+var noticeStream = ChatStream()
+noticeStream.receive(noticeEntries, animate: false)
+noticeStream.receive(noticeEntries, animate: true)
+assert(!noticeStream.hasPending)
+print("Completed answer: file cards follow the answer; live and cached warnings never start processing")
+
 var stream = ChatStream()
 stream.receive([], animate: true)
 let live = try JSONDecoder().decode([ChatEntry].self, from: Data(json.utf8))

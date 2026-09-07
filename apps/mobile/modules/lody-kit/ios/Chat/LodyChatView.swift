@@ -11,7 +11,7 @@ final class ChatCell: UICollectionViewCell, UIContextMenuInteractionDelegate {
   var onInteraction: (() -> Void)?
   override init(frame: CGRect) {
     super.init(frame: frame)
-    bubble.backgroundColor = .secondarySystemBackground
+    bubble.backgroundColor = .secondarySystemGroupedBackground
     bubble.layer.cornerRadius = 19
     bubble.layer.cornerCurve = .continuous
     contentView.addSubview(bubble)
@@ -28,12 +28,12 @@ final class ChatCell: UICollectionViewCell, UIContextMenuInteractionDelegate {
     self.row = row
     bubble.isHidden = row.kind != "user"
     icon.image = row.symbol.isEmpty ? nil : UIImage(systemName: row.symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 13))
-    icon.tintColor = row.attention ? .systemOrange : row.kind == "summary" && row.running ? .systemBlue : .secondaryLabel
+    icon.tintColor = row.attention ? .systemOrange : row.kind == "changes" || (row.kind == "summary" && row.running) ? .systemBlue : .secondaryLabel
     row.running && row.kind != "summary" ? spinner.startAnimating() : spinner.stopAnimating()
     accessibilityIdentifier = row.id
     accessibilityLabel = text.string
     accessibilityTraits = row.actionable ? .button : .staticText
-    accessibilityHint = row.kind == "summary" ? "打开执行过程" : nil
+    accessibilityHint = row.kind == "summary" ? "打开执行过程" : row.kind == "changes" ? "打开文件改动" : nil
     label.setShine(row.kind == "summary" && row.running && !row.attention)
     setNeedsLayout()
   }
@@ -63,7 +63,7 @@ final class ChatCell: UICollectionViewCell, UIContextMenuInteractionDelegate {
 
   private func contextPreview() -> UITargetedPreview? {
     let parameters = UIPreviewParameters()
-    parameters.backgroundColor = .systemBackground
+    parameters.backgroundColor = .secondarySystemGroupedBackground
     let rect = bubble.frame
     guard let preview = contentView.resizableSnapshotView(from: rect, afterScreenUpdates: false, withCapInsets: .zero) else { return nil }
     parameters.visiblePath = UIBezierPath(roundedRect: CGRect(origin: .zero, size: rect.size), cornerRadius: 19)
@@ -112,9 +112,11 @@ private final class ChatCollectionView: UICollectionView {
 
 private final class ChatNavigationController: UIViewController {
   var updateTitle: (() -> Void)?
+  var onWillAppear: ((Bool, UIViewControllerTransitionCoordinator?) -> Void)?
   override func viewWillAppear(_ animated: Bool) {
     super.viewWillAppear(animated)
     updateTitle?()
+    onWillAppear?(animated, transitionCoordinator ?? parent?.transitionCoordinator)
   }
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
@@ -125,6 +127,7 @@ private final class ChatNavigationController: UIViewController {
 final class LodyChatView: ExpoView, UICollectionViewDelegateFlowLayout, UIGestureRecognizerDelegate {
   let onSend = EventDispatcher()
   let onActivityPress = EventDispatcher()
+  let onTurnChangesPress = EventDispatcher()
   let onReconnect = EventDispatcher()
   let onTitlePress = EventDispatcher()
   let onComposerOptionChange = EventDispatcher()
@@ -169,6 +172,44 @@ final class LodyChatView: ExpoView, UICollectionViewDelegateFlowLayout, UIGestur
   private var laidOutHeight: CGFloat = 0
   private var hasInitialDraft = false
 
+  private let fileRegistration = UICollectionView.CellRegistration<UICollectionViewListCell, ChatRow> { cell, _, row in
+    guard let file = row.fileDiff else { return }
+    let path = file.path.replacingOccurrences(of: "\\", with: "/") as NSString
+    var content = UIListContentConfiguration.subtitleCell()
+    cell.directionalLayoutMargins.leading = content.directionalLayoutMargins.leading
+    cell.directionalLayoutMargins.trailing = content.directionalLayoutMargins.leading
+    content.text = path.lastPathComponent
+    content.secondaryText = path.deletingLastPathComponent
+    content.textProperties.font = .preferredFont(forTextStyle: .subheadline)
+    content.textProperties.numberOfLines = 1
+    content.textProperties.lineBreakMode = .byTruncatingMiddle
+    content.secondaryTextProperties.font = .preferredFont(forTextStyle: .caption1)
+    content.secondaryTextProperties.numberOfLines = 1
+    content.secondaryTextProperties.lineBreakMode = .byTruncatingMiddle
+    content.image = UIImage(systemName: "doc.text")
+    content.imageProperties.tintColor = .secondaryLabel
+    content.imageProperties.preferredSymbolConfiguration = .init(textStyle: .body)
+    cell.contentConfiguration = content
+    let counts = UILabel()
+    counts.font = .monospacedDigitSystemFont(ofSize: UIFont.preferredFont(forTextStyle: .footnote).pointSize, weight: .regular)
+    let value = NSMutableAttributedString(string: "+\(file.add ?? 0)", attributes: [.foregroundColor: UIColor.systemBlue])
+    value.append(NSAttributedString(string: "  −\(file.del ?? 0)", attributes: [.foregroundColor: UIColor.systemRed]))
+    counts.attributedText = value
+    cell.accessories = [.customView(configuration: .init(customView: counts, placement: .trailing())), .disclosureIndicator()]
+    cell.configurationUpdateHandler = { cell, state in
+      var background = UIBackgroundConfiguration.listGroupedCell()
+      background.cornerRadius = 12
+      background.backgroundInsets = NSDirectionalEdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0)
+      background.backgroundColor = state.isHighlighted || state.isSelected ? .tertiarySystemFill : .secondarySystemGroupedBackground
+      cell.backgroundConfiguration = background
+      cell.accessibilityTraits = state.isSelected ? [.button, .selected] : .button
+    }
+    cell.isAccessibilityElement = true
+    cell.accessibilityIdentifier = row.id
+    cell.accessibilityLabel = "\(file.path)，新增 \(file.add ?? 0) 行，删除 \(file.del ?? 0) 行"
+    cell.accessibilityHint = "打开文件改动"
+  }
+
   required init(appContext: AppContext? = nil) {
     let layout = UICollectionViewFlowLayout()
     layout.minimumLineSpacing = 0
@@ -182,7 +223,10 @@ final class LodyChatView: ExpoView, UICollectionViewDelegateFlowLayout, UIGestur
     navigation.view = UIView(frame: .zero)
     navigation.view.isUserInteractionEnabled = false
     navigation.updateTitle = { [weak self] in self?.attachTitle() }
-    backgroundColor = .systemBackground
+    navigation.onWillAppear = { [weak self] animated, coordinator in
+      self?.deselectFileOnReturn(animated: animated, coordinator: coordinator)
+    }
+    backgroundColor = .systemGroupedBackground
     collection.backgroundColor = .clear
     collection.alwaysBounceVertical = true
     collection.keyboardDismissMode = .interactive
@@ -202,6 +246,9 @@ final class LodyChatView: ExpoView, UICollectionViewDelegateFlowLayout, UIGestur
     collection.register(ChatMarkdownCell.self, forCellWithReuseIdentifier: "markdown")
     dataSource = UICollectionViewDiffableDataSource<String, String>(collectionView: collection) { [weak self] collection, index, id in
       guard let self, let row = self.rows[id] else { return nil }
+      if row.fileDiff != nil {
+        return collection.dequeueConfiguredReusableCell(using: self.fileRegistration, for: index, item: row)
+      }
       if row.image != nil {
         let cell = collection.dequeueReusableCell(withReuseIdentifier: "image", for: index) as! ChatImageCell
         cell.configure(row, workspace: self.imageWorkspace, session: self.imageSession)
@@ -535,7 +582,7 @@ final class LodyChatView: ExpoView, UICollectionViewDelegateFlowLayout, UIGestur
     paragraph.maximumLineHeight = lineHeight
     return NSAttributedString(string: row.text, attributes: [
       .font: UIFont.dynamic(of: row.kind == "user" ? 17 : 13, compatibleWith: traitCollection),
-      .foregroundColor: row.attention ? UIColor.systemOrange : row.kind == "summary" && row.running ? UIColor.systemBlue : row.kind == "user" ? UIColor.label : UIColor.secondaryLabel,
+      .foregroundColor: row.attention ? UIColor.systemOrange : row.kind == "changes" || (row.kind == "summary" && row.running) ? UIColor.systemBlue : row.kind == "user" ? UIColor.label : UIColor.secondaryLabel,
       .paragraphStyle: paragraph,
     ])
   }
@@ -545,7 +592,7 @@ final class LodyChatView: ExpoView, UICollectionViewDelegateFlowLayout, UIGestur
     applying = true
     let previousOffset = collection.contentOffset.y
     let projected = transcript.rows(processEntryID: processEntryID, processStartID: processStartID)
-    let liveEntryID = transcript.entries.last { !$0.finished && $0.role != "user" && (processEntryID.isEmpty || $0.id == processEntryID) }?.id
+    let liveEntryID = transcript.entries.last { $0.isRunning && (processEntryID.isEmpty || $0.id == processEntryID) }?.id
     let starting = self.liveEntryID == nil && liveEntryID != nil
     let nearTail = collection.contentSize.height - collection.bounds.height + collection.adjustedContentInset.bottom - previousOffset < CGFloat(ChatScroll.resumeDistance)
     let following = followsBottom || (starting && nearTail && !trackingPausedByGesture)
@@ -612,6 +659,10 @@ final class LodyChatView: ExpoView, UICollectionViewDelegateFlowLayout, UIGestur
   }
 
   func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+    if let id = dataSource.itemIdentifier(for: indexPath), let row = rows[id], let file = row.fileDiff {
+      onTurnChangesPress(["entryId": row.entryID, "path": file.path])
+      return
+    }
     collectionView.deselectItem(at: indexPath, animated: false)
     if let cell = collectionView.cellForItem(at: indexPath) as? ChatImageCell, let controller = presenter() {
       pauseTracking()
@@ -620,6 +671,23 @@ final class LodyChatView: ExpoView, UICollectionViewDelegateFlowLayout, UIGestur
     }
     guard let id = dataSource.itemIdentifier(for: indexPath), let row = rows[id], row.actionable else { return }
     onActivityPress(["entryId": row.entryID, "itemId": row.itemID, "processStartId": row.processStartID])
+  }
+
+  private func deselectFileOnReturn(animated: Bool, coordinator: UIViewControllerTransitionCoordinator?) {
+    guard let index = collection.indexPathsForSelectedItems?.first,
+      let id = dataSource.itemIdentifier(for: index) else { return }
+    guard let coordinator else {
+      collection.deselectItem(at: index, animated: animated)
+      return
+    }
+    let started = coordinator.animate(alongsideTransition: { [weak self] _ in
+      guard let self, let current = self.dataSource.indexPath(for: id) else { return }
+      self.collection.deselectItem(at: current, animated: animated)
+    }, completion: { [weak self] context in
+      guard context.isCancelled, let self, let current = self.dataSource.indexPath(for: id) else { return }
+      self.collection.selectItem(at: current, animated: false, scrollPosition: [])
+    })
+    if !started { collection.deselectItem(at: index, animated: animated) }
   }
 
   func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
@@ -706,6 +774,10 @@ final class LodyChatView: ExpoView, UICollectionViewDelegateFlowLayout, UIGestur
   func collectionView(_ collectionView: UICollectionView, layout: UICollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> CGSize {
     let width = max(1, collectionView.bounds.width - 40)
     guard let id = dataSource.itemIdentifier(for: indexPath), let row = rows[id] else { return CGSize(width: width, height: 0) }
+    if row.kind == "changes" {
+      let height = UIFont.preferredFont(forTextStyle: .subheadline).lineHeight + UIFont.preferredFont(forTextStyle: .caption1).lineHeight + 32
+      return CGSize(width: width, height: max(64, ceil(height)))
+    }
     let measured = measure(row, width: width)
     return CGSize(width: width, height: max(row.actionable || row.kind == "summary" ? 44 : 0, measured + (row.kind == "user" ? 44 : 12)))
   }

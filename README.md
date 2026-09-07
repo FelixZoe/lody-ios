@@ -47,7 +47,7 @@ apps/mobile/
 
 聊天正文由 runtime 持有：当前会话之外，最多保留 `MAX_BACKGROUND_SESSION_SYNCS = 3` 个后台会话，按用户最近打开的顺序淘汰；收到消息不会提升优先级。离开页面后继续同步并由 Swift 保存 SQLite 展示快照，返回保留的会话直接复用副本；被淘汰的会话先显示缓存，再重新 bootstrap。App 进入系统后台仍暂停 runtime，回到前台恢复保留的会话订阅。
 
-`pnpm ios`、`pnpm prebuild` 和 `pnpm bundle` 会先生成本地 WebView 资源；直接使用 Xcode 构建前先执行 `pnpm --filter @lody-ios/mobile native:assets`。原生资源包含 Flock、Loro、MarkdownView 和 Litext 的许可证。CocoaPods 需要通过 `bundle exec` 运行以加载 `cocoapods-spm`（`pnpm pods`）。
+`pnpm ios`、`pnpm prebuild` 和 `pnpm bundle` 会先生成本地 WebView 资源；直接使用 Xcode 构建前先执行 `pnpm --filter @lody-ios/mobile native:assets`。原生资源包含 Flock、Loro、MarkdownView、Litext、YiTong 和 @pierre/diffs 的许可证。CocoaPods 需要通过 `bundle exec` 运行以加载 `cocoapods-spm`（`pnpm pods`）。
 
 ## Router、present 和 Native Kit
 
@@ -79,4 +79,4 @@ UI 首要目标是符合 [Apple HIG](https://developer.apple.com/design/human-in
 
 感谢 [FlowDown](https://github.com/Lakr233/FlowDown) 及其作者与贡献者。Lody 的原生聊天列表、Markdown 解析与测量缓存，以及流式文字的均匀分批展示参考了该项目的 `MessageListView`、`MarkdownTextView` 和 `BalancedEmitter` 架构。
 
-聊天内容与输入区由 LodyKit 内的 Swift/UIKit 实现，使用 `UICollectionView` 长列表；生成时展开执行过程，文字显示完毕后折叠。助手正文使用 FlowDown 抽出的 [MarkdownView](https://github.com/Lakr233/MarkdownView) 与 [Litext](https://github.com/Lakr233/Litext)（均为 MIT，许可证随原生资源打包），提供表格、代码高亮、任务列表、公式和原生文字选择；逐字淡入由 LodyKit 通过注入的 `TextLabelView` 子类绘制。原生行为检查与开发预览见 [Chat verification](apps/mobile/modules/lody-kit/verification/chat/README.md)。
+聊天内容与输入区由 LodyKit 内的 Swift/UIKit 实现，使用 `UICollectionView` 长列表；生成时展开执行过程，文字显示完毕后折叠。助手正文使用 FlowDown 抽出的 [MarkdownView](https://github.com/Lakr233/MarkdownView) 与 [Litext](https://github.com/Lakr233/Litext)（均为 MIT，许可证随原生资源打包），提供表格、代码高亮、任务列表、公式和原生文字选择；逐字淡入由 LodyKit 通过注入的 `TextLabelView` 子类绘制。代码 diff 与文件查看由 [YiTong](https://github.com/onevcat/YiTong)（Apache-2.0）在 `WKWebView` 内渲染本地打包的 [@pierre/diffs](https://github.com/pierrecomputer/pierre/tree/main/packages/diffs)（Apache-2.0），提供语法高亮、词级差异与虚拟化滚动。原生行为检查与开发预览见 [Chat verification](apps/mobile/modules/lody-kit/verification/chat/README.md)。

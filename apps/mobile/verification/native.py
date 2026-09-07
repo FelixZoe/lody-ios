@@ -15,6 +15,7 @@ checks = {
     'chat': ['Chat/ChatTranscript.swift', 'Chat/ChatStream.swift', 'Chat/ChatTextFade.swift'],
     'watchdog': ['Cloud/RuntimeHealth.swift'],
     'local-store': ['Cloud/LocalStore.swift'],
+    'content-store': ['Cloud/ContentStore.swift'],
     'chat-render': ['Chat/ChatTextView.swift', 'Chat/ChatTextFade.swift'],
     'composer': ['UIFont+Dynamic.swift', 'Chat/ChatAttachments.swift', 'Chat/ChatAttachmentSheet.swift', 'Chat/ChatComposerView.swift'],
     'attachments': ['Cloud/SessionAttachments.swift'],

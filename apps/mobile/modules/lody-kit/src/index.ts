@@ -91,3 +91,27 @@ export {
 export { NativeChat, type ChatDraftAttachment } from './chat/NativeChat';
 
 export { NativeComposer } from './chat/NativeComposer';
+
+export {
+  turnDiff,
+  fileDiff,
+  readFile,
+  listDir,
+  localProjectIdOf,
+  type DiffContent,
+  type DiffSideKind,
+  type FileContent,
+  type FileKind,
+  type DirectoryEntry,
+  type DirectoryListing,
+} from './diff/files';
+export { readContentText, previewContent } from './runtime/LodyKit';
+export { NativeDiff, type NativeDiffProps } from './diff/NativeDiff';
+export {
+  NativeCodeView,
+  type NativeCodeViewProps,
+} from './diff/NativeCodeView';
+export {
+  NativeDiffToolbar,
+  type NativeDiffToolbarProps,
+} from './diff/NativeDiffToolbar';

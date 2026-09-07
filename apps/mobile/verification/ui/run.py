@@ -13,7 +13,7 @@ from driver import UI
 
 ROOT = Path(__file__).resolve().parents[4]
 CHAT = ROOT / 'apps/mobile/modules/lody-kit/verification/chat'
-CASES = ['layout', 'tracking', 'model-options', 'image-preview', 'composer', 'composer-success', 'composer-failure', 'markdown']
+CASES = ['layout', 'tracking', 'model-options', 'image-preview', 'composer', 'composer-success', 'composer-failure', 'markdown', 'changes']
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--udid', required=True, help='Disposable simulator, never a personal device')
 parser.add_argument('--app', required=True, type=Path)
@@ -99,7 +99,7 @@ try:
                 else:
                     raise TimeoutError('Video recorder did not start')
                 ui.capture('before')
-                script = Path(__file__).with_name(f'{case}.py') if case in ['composer', 'markdown'] else CHAT / ('composer.py' if case.startswith('composer-') else f'{case}.py')
+                script = Path(__file__).with_name(f'{case}.py') if case in ['composer', 'markdown', 'changes'] else CHAT / ('composer.py' if case.startswith('composer-') else f'{case}.py')
                 command = [sys.executable, str(script), args.udid]
                 if case.startswith('composer-'):
                     command += ['--expect', case.removeprefix('composer-'), '--output', str(output)]

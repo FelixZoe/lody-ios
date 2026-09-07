@@ -9,6 +9,13 @@ import {
   type CreateSessionArgs,
 } from './create-session';
 import { archiveSession, pinSession } from './archive-session';
+import {
+  fileDiff,
+  listDir,
+  readFile,
+  turnDiff,
+  type MachineContext,
+} from './files';
 import { Flock } from '@loro-dev/flock-wasm/base64';
 import { StreamsClient } from '@loro-dev/streams-client';
 import { decompress } from 'fzstd';
@@ -253,6 +260,29 @@ function watch(mode: string) {
     }
   })();
 }
+function machineFor(
+  sessionId: string,
+  path: string,
+): MachineContext & { localProjectId?: string } {
+  if (!metaReplica || unhealthy.size) throw new Error('metadata_not_ready');
+  if (typeof path !== 'string' || path.length > 32768 || path.includes('\0'))
+    throw new Error('invalid_path');
+  const session = catalogs
+    .get('meta')
+    ?.sessions.find((item) => item.id === sessionId);
+  if (!session || !machineReplicas.has(session.machineId))
+    throw new Error('machine_unavailable');
+  const localPrefix = `${session.machineId}:local:`;
+  return {
+    workspaceId: workspace,
+    machineId: session.machineId,
+    localProjectId: session.projectId.startsWith(localPrefix)
+      ? session.projectId.slice(localPrefix.length)
+      : undefined,
+    getGrant,
+    signal: AbortSignal.timeout(35000),
+  };
+}
 Object.assign(globalThis, {
   dataRuntime: {
     ping: () => true,
@@ -416,6 +446,30 @@ Object.assign(globalThis, {
       } finally {
         registering = false;
       }
+    },
+    turnDiff(args: { sessionId: string; entryId: string; path: string }) {
+      return turnDiff(machineFor(args.sessionId, args.path), args);
+    },
+    fileDiff(args: { sessionId: string; path: string }) {
+      return fileDiff(machineFor(args.sessionId, args.path), args);
+    },
+    readFile(args: { sessionId: string; path: string }) {
+      return readFile(machineFor(args.sessionId, args.path), args);
+    },
+    listDir(args: {
+      workspaceId: string;
+      sessionId: string;
+      relativePath: string;
+      userId: string;
+    }) {
+      if (args.workspaceId !== workspace) throw new Error('metadata_not_ready');
+      const ctx = machineFor(args.sessionId, args.relativePath);
+      if (!ctx.localProjectId) throw new Error('project_unavailable');
+      return listDir(ctx, {
+        localProjectId: ctx.localProjectId,
+        relativePath: args.relativePath,
+        userId: args.userId,
+      });
     },
     creationOptions(args: { workspaceId: string; projectId: string }) {
       if (args.workspaceId !== workspace || !metaReplica || unhealthy.size)

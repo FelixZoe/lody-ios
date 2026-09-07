@@ -48,14 +48,14 @@ struct ChatStream {
   var hasPending: Bool { reveals.values.contains { $0.hasPending } }
 
   mutating func receive(_ entries: [ChatEntry], animate: Bool) {
-    let wasRunning = Set(targets.filter { !$0.finished }.map(\.id))
+    let wasRunning = Set(targets.filter(\.isRunning).map(\.id))
     var retained: Set<ID> = []
     for entry in entries where entry.role != "user" {
       for item in entry.items where item.type == "text" || item.type == "thought" {
         let id = ID(entry: entry.id, item: item.itemId)
         retained.insert(id)
         var reveal = reveals[id] ?? Reveal()
-        let shouldAnimate = initialized && animate && (!entry.finished || wasRunning.contains(entry.id) || reveal.hasPending)
+        let shouldAnimate = initialized && animate && entry.role == "assistant" && (entry.isRunning || wasRunning.contains(entry.id) || reveal.hasPending)
         reveal.receive(item.text ?? "", animate: shouldAnimate)
         reveals[id] = reveal
       }

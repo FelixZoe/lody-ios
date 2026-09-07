@@ -31,16 +31,17 @@ preferences are changed. Remove the disposable Simulator when finished. It never
 
 ## Baseline inventory
 
-| Case             | Production surface                  | Behavior                                                                                   |
-| ---------------- | ----------------------------------- | ------------------------------------------------------------------------------------------ |
-| layout           | NativeChat + navigation title       | Stream segments, completion folding, full conclusion, process-row height, send positioning |
-| tracking         | NativeChat                          | User drag releases following, stable history, return button during/after streaming         |
-| model-options    | ChatComposerView                    | Model/effort controls, RN echo, reopen persistence                                         |
-| image-preview    | ChatImageCell + ChatImagePreview    | Synthetic bitmap, zoom/restore, button and gesture dismissal                               |
-| composer         | NativeComposer in a real form sheet | Keyboard clearance, pending draft clearing, rejection restore, duplicate suppression       |
-| composer-success | NativeChat composer                 | Pending clear/lock, text and attachment stay cleared after acceptance                      |
-| markdown         | MarkdownView code block             | Copy preserves complete code and indentation through the Simulator clipboard               |
-| composer-failure | NativeChat composer                 | Exact text and attachment restoration after rejection                                      |
+| Case             | Production surface                  | Behavior                                                                                       |
+| ---------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------- |
+| layout           | NativeChat + navigation title       | Stream segments, completion folding, full conclusion, process-row height, send positioning     |
+| tracking         | NativeChat                          | User drag releases following, stable history, return button during/after streaming             |
+| model-options    | ChatComposerView                    | Model/effort controls, RN echo, reopen persistence                                             |
+| image-preview    | ChatImageCell + ChatImagePreview    | Synthetic bitmap, zoom/restore, button and gesture dismissal                                   |
+| composer         | NativeComposer in a real form sheet | Keyboard clearance, pending draft clearing, rejection restore, duplicate suppression           |
+| composer-success | NativeChat composer                 | Pending clear/lock, text and attachment stay cleared after acceptance                          |
+| markdown         | MarkdownView code block             | Copy preserves complete code and indentation through the Simulator clipboard                   |
+| changes          | NativeChat + file diff page         | File cards after completion, exact counts, long paths, direct diff navigation, hidden warnings |
+| composer-failure | NativeChat composer                 | Exact text and attachment restoration after rejection                                          |
 
 Every case starts a fresh app process and navigates from Debug. Both light and
 dark appearances run with default text size and English system controls. Fixture

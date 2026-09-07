@@ -36,6 +36,9 @@ final class DataRuntime: NSObject, WKScriptMessageHandler, WKNavigationDelegate 
       self.disposeView()
       self.publish("background", reason: "paused")
     })
+    observers.append(NotificationCenter.default.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { _ in
+      ContentStore.shared.clearAll()
+    })
     observers.append(NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
       guard let self, self.workspace != nil, self.phase == "background" else { return }
       self.build(reason: "foreground")
@@ -166,6 +169,7 @@ final class DataRuntime: NSObject, WKScriptMessageHandler, WKNavigationDelegate 
     view.callAsyncJavaScript("return await globalThis.dataRuntime.session(id)", arguments: ["id": id], in: nil, in: .page, completionHandler: nil)
   }
   func closeSession(_ id: String) {
+    ContentStore.shared.clear(session: id)
     guard sessionId == id else { return }
     attachmentTask?.cancel(); attachmentTask = nil
     sessionId = nil
@@ -217,6 +221,40 @@ final class DataRuntime: NSObject, WKScriptMessageHandler, WKNavigationDelegate 
 
   /// Expo's `reject(code:description:)` drops the description in this version,
   /// so every failure reads "undefined reason". Carry the text in an NSError.
+  // Bodies stay in ContentStore; RN only receives a handle plus metadata.
+  private static func parkContent(method: String, session: String, json: String) -> String {
+    guard let data = json.data(using: .utf8),
+          var object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          object["status"] as? String == "ok" else { return json }
+    let path = object["path"] as? String ?? ""
+    if method == "readFile" {
+      let binary = object["kind"] as? String == "binary"
+      let mimeType = object["mimeType"] as? String
+      let body: Data
+      if binary {
+        guard let decoded = Data(base64Encoded: object["base64"] as? String ?? "") else { return json }
+        body = decoded
+      } else {
+        body = Data((object["text"] as? String ?? "").utf8)
+      }
+      let kind = ContentStore.classify(path: path, binary: binary, mimeType: mimeType)
+      object["kind"] = kind
+      object["text"] = nil; object["base64"] = nil
+      object["handle"] = ContentStore.shared.put(StoredContent(data: body, kind: kind, path: path, session: session, mimeType: mimeType))
+    } else {
+      var sides: [String: String] = [:]
+      for key in ["old", "new"] {
+        let side = object[key] as? [String: Any]
+        sides[key] = side?["text"] as? String
+        object[key + "Kind"] = side?["kind"] as? String ?? "missing"
+        object[key] = nil
+      }
+      let body = (try? JSONSerialization.data(withJSONObject: sides)) ?? Data()
+      object["handle"] = ContentStore.shared.put(StoredContent(data: body, kind: "diff", path: path, session: session, mimeType: nil))
+    }
+    guard let output = try? JSONSerialization.data(withJSONObject: object), let text = String(data: output, encoding: .utf8) else { return json }
+    return text
+  }
   private func fail(_ promise: Promise, _ code: String, _ message: String) {
     promise.reject(
       NSError(
@@ -227,7 +265,8 @@ final class DataRuntime: NSObject, WKScriptMessageHandler, WKNavigationDelegate 
     )
   }
 
-  private static let sessionCommands: Set<String> = ["sendTurn", "itemDetail", "respondPermission"]
+  private static let sessionCommands: Set<String> = ["sendTurn", "itemDetail", "respondPermission", "turnDiff", "fileDiff", "readFile"]
+  private static let contentCommands: Set<String> = ["turnDiff", "fileDiff", "readFile"]
   func command(_ method: String, payload: String, promise: Promise) {
     guard health.ready, let view = webView, let data = payload.data(using: .utf8), data.count <= 128 * 1024,
           let args = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -265,6 +304,10 @@ final class DataRuntime: NSObject, WKScriptMessageHandler, WKNavigationDelegate 
            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            let message = object["__commandError"] as? String {
           fail(pending, "command_failed", message)
+          return
+        }
+        if Self.contentCommands.contains(method), let text = value as? String {
+          pending.resolve(Self.parkContent(method: method, session: args["sessionId"] as? String ?? "", json: text))
           return
         }
         pending.resolve(value)

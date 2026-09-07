@@ -1,5 +1,12 @@
 import Foundation
 
+struct ChatFileDiff: Decodable, Equatable {
+  let path: String
+  let add: Int?
+  let del: Int?
+  let status: String?
+}
+
 struct ChatEntry: Decodable {
   let id: String
   let role: String
@@ -8,6 +15,8 @@ struct ChatEntry: Decodable {
   let endedAt: Double?
   let startedAt: Double?
   var items: [ChatItem]
+  let fileDiffs: [ChatFileDiff]?
+  var isRunning: Bool { role == "assistant" && !finished }
 }
 
 struct ChatImage: Decodable, Equatable {
@@ -23,6 +32,7 @@ struct ChatItem: Decodable {
   struct Plan: Decodable { let content: String; let status: String }
   let itemId: String
   let type: String
+  let name: String?
   var text: String?
   let kind: String?
   let title: String?
@@ -49,6 +59,7 @@ struct ChatRow: Equatable {
   var attention = false
   var streaming = false
   var image: ChatImage? = nil
+  var fileDiff: ChatFileDiff? = nil
 }
 
 /// Stable identities belong to the protocol, never to the streamed text.
@@ -57,6 +68,10 @@ struct ChatTranscript {
 
   func rows(processEntryID: String = "", processStartID: String = "") -> [ChatRow] {
     entries.flatMap { entry -> [ChatRow] in
+      var entry = entry
+      // Older cached projections omitted notice names. Neither these placeholders nor
+      // agent warnings belong in the conversation's execution process.
+      entry.items.removeAll { $0.type == "system_notice" && ($0.name == nil || $0.name == "agent_warning") }
       let processOnly = !processEntryID.isEmpty
       if processOnly && entry.id != processEntryID { return [] }
       if entry.role == "user" {
@@ -76,7 +91,10 @@ struct ChatTranscript {
       let finalText = entry.items.lastIndex { $0.type == "text" && !($0.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
       var visible: [Int] = []
       var groups: [Int: [Int]] = [:]
-      if processOnly {
+      if entry.role != "assistant" {
+        if processOnly { return [] }
+        visible = Array(entry.items.indices)
+      } else if processOnly {
         if !processStartID.isEmpty, let start = entry.items.firstIndex(where: { $0.itemId == processStartID }) {
           let end = entry.items.indices.dropFirst(start + 1).first { entry.items[$0].type == "text" } ?? entry.items.endIndex
           visible = Array(start..<end)
@@ -107,7 +125,7 @@ struct ChatTranscript {
           let tools = process.filter { $0.type == "tool_call" }.count
           let needsPermission = process.contains { $0.permission?.pending == true }
           let failed = process.contains { $0.status == "failed" }
-          let running = !entry.finished && indices.last == entry.items.indices.last
+          let running = entry.isRunning && indices.last == entry.items.indices.last
           let title = needsPermission ? "等待批准" : failed ? "处理失败" : running ? "正在处理" : "执行过程"
           let firstGroup = index == groups.keys.min()
           result.append(ChatRow(id: entry.id + ":process" + (firstGroup ? "" : ":" + entry.items[index].itemId), entryID: entry.id, kind: "summary",
@@ -120,8 +138,8 @@ struct ChatTranscript {
         let attention = item.status == "failed" || item.permission?.pending == true
         var row = ChatRow(id: entry.id + ":" + item.itemId, entryID: entry.id,
           kind: item.type, text: item.text ?? "", itemID: item.itemId,
-          running: !entry.finished && item.status == "in_progress", attention: attention,
-          streaming: !entry.finished && (item.type == "text" || item.type == "thought"))
+          running: entry.isRunning && item.status == "in_progress", attention: attention,
+          streaming: entry.isRunning && (item.type == "text" || item.type == "thought"))
         switch item.type {
         case "text": break
         case "thought": row.symbol = "brain"
@@ -143,6 +161,12 @@ struct ChatTranscript {
           row.symbol = "info.circle"
         }
         if !row.text.isEmpty { result.append(row) }
+      }
+      if entry.role == "assistant", entry.finished, !processOnly {
+        for file in entry.fileDiffs ?? [] where !file.path.isEmpty {
+          result.append(ChatRow(id: entry.id + ":changes:" + file.path, entryID: entry.id, kind: "changes",
+            text: file.path, symbol: "doc.text", actionable: true, fileDiff: file))
+        }
       }
       return result
     }

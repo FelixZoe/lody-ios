@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
+import { NativeDiff } from '@lody-ios/kit';
 import { usePalette } from '@/theme/palette';
 import { AppText } from '@/ui/AppText';
 
@@ -27,19 +28,6 @@ export type DetailResponse = {
   nextCursor?: string;
 };
 
-function diffLines(block: DetailBlock) {
-  const before = (block.oldText ?? '').split('\n');
-  const after = (block.newText ?? '').split('\n');
-  const removed = new Set(after);
-  const added = new Set(before);
-  const lines: { mark: ' ' | '+' | '−'; text: string }[] = [];
-  for (const line of before)
-    if (!removed.has(line)) lines.push({ mark: '−', text: line });
-  for (const line of after)
-    lines.push({ mark: added.has(line) ? ' ' : '+', text: line });
-  return lines;
-}
-
 function Mono({ children, color }: { children: string; color?: unknown }) {
   return (
     <AppText
@@ -53,31 +41,25 @@ function Mono({ children, color }: { children: string; color?: unknown }) {
 }
 
 export function DiffBlock({ block }: { block: DetailBlock }) {
-  const colors = usePalette();
+  const [height, setHeight] = useState(0);
+  const [failed, setFailed] = useState(false);
+  if (failed) return <Mono>{JSON.stringify(block, null, 2)}</Mono>;
   return (
     <View style={{ gap: 6 }}>
       {block.path ? <AppText variant="meta">{block.path}</AppText> : null}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        <View>
-          {diffLines(block).map((line, index) => (
-            <View
-              key={index}
-              style={{
-                flexDirection: 'row',
-                backgroundColor:
-                  line.mark === '+'
-                    ? `${colors.accent}22`
-                    : line.mark === '−'
-                      ? 'rgba(255,59,48,0.15)'
-                      : undefined,
-                paddingHorizontal: 6,
-              }}
-            >
-              <Mono>{`${line.mark} ${line.text}`}</Mono>
-            </View>
-          ))}
-        </View>
-      </ScrollView>
+      <NativeDiff
+        path={block.path ?? ''}
+        oldText={block.oldText ?? ''}
+        newText={block.newText ?? ''}
+        scrollEnabled={false}
+        style={{
+          height: Math.max(height, 44),
+          borderRadius: 12,
+          overflow: 'hidden',
+        }}
+        onRender={({ nativeEvent }) => setHeight(nativeEvent.contentHeight)}
+        onFail={() => setFailed(true)}
+      />
     </View>
   );
 }

@@ -39,6 +39,9 @@ export const NativeChat: ComponentType<
         processStartId?: string;
       }>,
     ) => void;
+    onTurnChangesPress?: (
+      event: NativeSyntheticEvent<{ entryId: string; path: string }>,
+    ) => void;
     onReconnect: () => void;
     onComposerOptionChange?: (
       event: NativeSyntheticEvent<{ modelId: string; effort: string }>,

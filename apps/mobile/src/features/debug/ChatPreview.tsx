@@ -3,7 +3,9 @@ import { Stack } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Alert } from 'react-native';
 import { NativeChat } from '@lody-ios/kit';
-import { definePage } from '@/presentation';
+import { definePage, present } from '@/presentation';
+import { fileDiffPage } from '@/features/sessions/changes/fileDiffPage';
+import { basename } from '@/features/sessions/changes/turnChangesPage';
 import { useProcessSheet } from '@/features/sessions/detail/processPage';
 
 const answer = `## 原生聊天布局\n\n列表使用 **UICollectionView**，正文直接由 UIKit 渲染。\n\n- 输入区始终可见，跟随键盘移动\n- 执行过程在 Sheet 中平铺\n- 完成后保持回答和过程入口\n\n### 代码示例\n\n\`\`\`swift\nlet layout = UICollectionViewFlowLayout()\nlet list = UICollectionView(\n  frame: .zero,\n  collectionViewLayout: layout\n)\n\`\`\`\n\n这是一条用于检查换行、**粗体**和 \`inline code\` 的较长段落。切换浅色和深色外观，正文和输入框都应清晰可读。\n\n> 引用块用于确认左侧竖条与次级文字颜色。\n\n1. 有序列表\n   - 嵌套的无序项\n   - [x] 已完成的任务\n   - [ ] 未完成的任务\n2. 第二项，见 [Apple HIG](https://developer.apple.com/design/human-interface-guidelines/)\n\n| 节点 | 状态 |\n| --- | --- |\n| 表格 | 原生 GridView |\n| 公式 | $E = mc^2$ |\n\n---\n\n分割线之后的收尾段落。`;
@@ -28,6 +30,7 @@ const totalLength = answer.length + 240;
 
 function ChatPreview() {
   const [showImage, setShowImage] = useState(false);
+  const [showChanges, setShowChanges] = useState(false);
   const [length, setLength] = useState(totalLength);
   const [step, setStep] = useState(48);
   const [mode, setMode] = useState<'normal' | 'attention'>('normal');
@@ -165,15 +168,93 @@ function ChatPreview() {
       ],
     },
   ]);
-  const openProcess = useProcessSheet(entriesJSON, () => setMode('attention'));
+  const displayedEntriesJSON = showChanges
+    ? JSON.stringify([
+        {
+          id: 'diff-user',
+          role: 'user',
+          status: 'handled',
+          finished: true,
+          items: [
+            {
+              itemId: 'text',
+              type: 'text',
+              text: '修改文件，然后回复 done。',
+            },
+          ],
+        },
+        {
+          id: 'diff-preview',
+          role: 'assistant',
+          status: 'pending',
+          finished: true,
+          items: [
+            {
+              itemId: 'edit',
+              type: 'tool_call',
+              kind: 'edit',
+              title: 'Editing files',
+              status: 'completed',
+            },
+            { itemId: 'answer', type: 'text', text: 'done' },
+          ],
+          fileDiffs: [
+            { path: 'docs/superpowers/.diff-check.md', add: 1, del: 1 },
+            {
+              path: 'src/very-long-directory-name/nested/components/another-long-file-name.ts',
+              add: 1,
+              del: 1,
+            },
+          ],
+        },
+        {
+          id: 'diff-warning',
+          role: 'system',
+          status: 'pending',
+          finished: false,
+          items: [
+            {
+              itemId: 'notice',
+              type: 'system_notice',
+              name: 'agent_warning',
+            },
+          ],
+        },
+        {
+          id: 'diff-cached-warning',
+          role: 'system',
+          status: 'pending',
+          finished: false,
+          items: [{ itemId: 'notice', type: 'system_notice' }],
+        },
+      ])
+    : showImage
+      ? JSON.stringify(JSON.parse(entriesJSON).slice(0, 1))
+      : entriesJSON;
+  const openProcess = useProcessSheet(displayedEntriesJSON, () =>
+    setMode('attention'),
+  );
   return (
     <>
       <Stack.Toolbar placement="right">
         {uiVerify && (
           <Stack.Toolbar.Button
+            accessibilityLabel="Diff Fixture"
+            icon="doc.text"
+            onPress={() => {
+              setShowImage(false);
+              setShowChanges(true);
+            }}
+          />
+        )}
+        {uiVerify && (
+          <Stack.Toolbar.Button
             accessibilityLabel="Image Fixture"
             icon="photo"
-            onPress={() => setShowImage(true)}
+            onPress={() => {
+              setShowChanges(false);
+              setShowImage(true);
+            }}
           />
         )}
         <Stack.Toolbar.Button
@@ -181,6 +262,7 @@ function ChatPreview() {
           icon="forward.end"
           onPress={() => {
             setShowImage(false);
+            setShowChanges(false);
             setStep(240);
             setMode('normal');
             setLength(0);
@@ -191,6 +273,7 @@ function ChatPreview() {
           icon="arrow.trianglehead.clockwise.rotate.90"
           onPress={() => {
             setShowImage(false);
+            setShowChanges(false);
             setStep(48);
             setMode('normal');
             setLength(0);
@@ -202,11 +285,7 @@ function ChatPreview() {
         navigationSubtitle="lody-ios"
         onTitlePress={() => Alert.alert('会话详情', '原生 titleView 点击正常')}
         style={{ flex: 1 }}
-        entriesJSON={
-          showImage
-            ? JSON.stringify(JSON.parse(entriesJSON).slice(0, 1))
-            : entriesJSON
-        }
+        entriesJSON={displayedEntriesJSON}
         composerJSON={JSON.stringify({
           editable: true,
           canSend: true,
@@ -245,6 +324,18 @@ function ChatPreview() {
           openProcess(nativeEvent.entryId, nativeEvent.processStartId)
         }
         onReconnect={() => {}}
+        onTurnChangesPress={({ nativeEvent }) => {
+          if (showChanges)
+            void present(
+              fileDiffPage,
+              {
+                sessionId: 'ui-verify-diff',
+                entryId: nativeEvent.entryId,
+                path: nativeEvent.path,
+              },
+              { title: basename(nativeEvent.path) },
+            );
+        }}
         onComposerOptionChange={({ nativeEvent }) =>
           setComposerOptions(nativeEvent)
         }

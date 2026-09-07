@@ -10,12 +10,17 @@ import {
   sessionCreationOptions,
 } from '@lody-ios/kit';
 import { definePage, present, usePageRuntime } from '@/presentation';
+import { localProjectIdOf } from '@lody-ios/kit';
 import { newSession, setArchived, setPinned } from './navigation';
 import { useAuth } from '@/features/auth/AuthProvider';
 import type { Capability, CreationOptions, Session } from '@/cloud/model';
 import type { EntrySummary, ItemSummary } from './transcript/types';
 import { pendingPermission, useSessionRuntime } from './useSessionRuntime';
 import { itemDetailPage } from './detail/itemDetailPage';
+import { basename } from './changes/turnChangesPage';
+import { fileDiffPage } from './changes/fileDiffPage';
+import { filesPage } from './files/FilesScreen';
+import { changedFiles } from './transcript/changes';
 import { permissionPage } from './detail/permissionPage';
 import { useProcessSheet } from './detail/processPage';
 import type { ModelChoice } from './ModelScreen';
@@ -95,13 +100,43 @@ function SessionScreen() {
     currentSession.cliType,
     currentSession.agentType,
   ]);
+  const browsable =
+    !!selected &&
+    !currentSession.archived &&
+    !!localProjectIdOf(session.projectId);
   const showDetails = () =>
     Alert.alert(
       currentSession.title,
       [project?.name, project?.rootPath, `电脑：${currentSession.machineId}`]
         .filter(Boolean)
         .join('\n'),
+      browsable && account
+        ? [
+            {
+              text: '项目文件',
+              onPress: () =>
+                void present(filesPage, {
+                  workspaceId: selected.id,
+                  sessionId: session.id,
+                  userId: account.user.id,
+                  path: '',
+                  title: project?.name ?? '项目文件',
+                }),
+            },
+            { text: '好', style: 'cancel' },
+          ]
+        : undefined,
     );
+  const onTurnChangesPress = (entryId: string, path: string) => {
+    const entry = snapshot.entries.find((e) => e.id === entryId);
+    if (!entry) return;
+    if (!changedFiles(entry).some((file) => file.path === path)) return;
+    void present(
+      fileDiffPage,
+      { sessionId: session.id, entryId, path },
+      { title: basename(path) },
+    );
+  };
   const { snapshot, overflow, cursor, reconnect } = useSessionRuntime(
     session.id,
     account?.user.id ?? '',
@@ -261,7 +296,13 @@ function SessionScreen() {
     snapshot.status,
   );
   const entriesJSON = useMemo(
-    () => JSON.stringify(snapshot.entries),
+    () =>
+      JSON.stringify(
+        snapshot.entries.map((entry) => ({
+          ...entry,
+          fileDiffs: changedFiles(entry),
+        })),
+      ),
     [snapshot.entries],
   );
   const openProcess = useProcessSheet(entriesJSON, onActivityPress);
@@ -378,6 +419,9 @@ function SessionScreen() {
           nativeEvent.itemId
             ? onActivityPress(nativeEvent.entryId, nativeEvent.itemId)
             : openProcess(nativeEvent.entryId, nativeEvent.processStartId)
+        }
+        onTurnChangesPress={({ nativeEvent }) =>
+          onTurnChangesPress(nativeEvent.entryId, nativeEvent.path)
         }
         onReconnect={reconnect}
         onComposerOptionChange={({ nativeEvent }) => {

@@ -2,11 +2,18 @@ const { withDangerousMod } = require('expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
-const PACKAGE = {
-  name: 'MarkdownView',
-  url: 'https://github.com/Innei/MarkdownView.git',
-  branch: 'lody/inject-text-label-view',
-};
+const PACKAGES = [
+  {
+    name: 'MarkdownView',
+    url: 'https://github.com/Innei/MarkdownView.git',
+    branch: 'lody/inject-text-label-view',
+  },
+  {
+    name: 'YiTong',
+    url: 'https://github.com/Innei/YiTong.git',
+    branch: 'lody/single-file',
+  },
+];
 
 const header = `plugin 'cocoapods-spm'
 require 'cocoapods-spm/hooks/helpers/update_script'
@@ -30,7 +37,8 @@ end
 Pod::SPM::UpdateScript::Mixin.prepend(LodySPMFileLists)
 `;
 
-const spmPkg = `  spm_pkg "${PACKAGE.name}", :url => "${PACKAGE.url}", :branch => "${PACKAGE.branch}"\n`;
+const spmPkg = (pkg) =>
+  `  spm_pkg "${pkg.name}", :url => "${pkg.url}", :branch => "${pkg.branch}"\n`;
 
 module.exports = function withMarkdownView(config) {
   return withDangerousMod(config, [
@@ -43,10 +51,11 @@ module.exports = function withMarkdownView(config) {
       let contents = fs.readFileSync(podfile, 'utf8');
       if (!contents.includes("plugin 'cocoapods-spm'"))
         contents = header + contents;
-      if (!contents.includes('spm_pkg "MarkdownView"')) {
+      for (const pkg of PACKAGES) {
+        if (contents.includes(`spm_pkg "${pkg.name}"`)) continue;
         contents = contents.replace(
           /^target '([^']+)' do\n/m,
-          (line) => line + spmPkg,
+          (line) => line + spmPkg(pkg),
         );
       }
       fs.writeFileSync(podfile, contents);

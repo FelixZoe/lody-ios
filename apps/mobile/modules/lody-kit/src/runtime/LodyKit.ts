@@ -45,6 +45,12 @@ declare class LodyKitNativeModule extends NativeModule<Events> {
   sendSessionTurn(payload: string): Promise<string>;
   sessionItemDetail(payload: string): Promise<string>;
   respondSessionPermission(payload: string): Promise<string>;
+  turnDiff(payload: string): Promise<string>;
+  fileDiff(payload: string): Promise<string>;
+  readFile(payload: string): Promise<string>;
+  listDir(payload: string): Promise<string>;
+  readContentText(handle: string): Promise<string | null>;
+  previewContent(handle: string): Promise<void>;
   watchCatalog(workspace: string, owner: string, userId: string): Promise<void>;
   unwatchCatalog(owner: string): Promise<void>;
   dataRuntimeStatus(): Promise<DataRuntimeEvent>;
@@ -113,6 +119,13 @@ export const sessionItemDetail = (payload: string) =>
   native.sessionItemDetail(payload);
 export const respondSessionPermission = (payload: string) =>
   native.respondSessionPermission(payload);
+export const turnDiffRaw = (payload: string) => native.turnDiff(payload);
+export const fileDiffRaw = (payload: string) => native.fileDiff(payload);
+export const readFileRaw = (payload: string) => native.readFile(payload);
+export const listDirRaw = (payload: string) => native.listDir(payload);
+export const readContentText = (handle: string) =>
+  native.readContentText(handle);
+export const previewContent = (handle: string) => native.previewContent(handle);
 
 export const sessionCreationOptions = (payload: string) =>
   native.sessionCreationOptions(payload);

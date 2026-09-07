@@ -13,6 +13,7 @@ public final class LodyKitModule: Module {
 
     Events("onAppActive", "onDataRuntime")
     OnCreate {
+      ContentPreview.clearAll()
       #if DEBUG
       if ProcessInfo.processInfo.arguments.contains("--lody-offline") {
         URLProtocol.registerClass(OfflineProbe.self)
@@ -35,6 +36,34 @@ public final class LodyKitModule: Module {
     AsyncFunction("sendSessionTurn") { (payload: String, promise: Promise) in self.dataRuntime.sendTurn(payload, promise: promise) }.runOnQueue(.main)
     AsyncFunction("sessionItemDetail") { (payload: String, promise: Promise) in self.dataRuntime.command("itemDetail", payload: payload, promise: promise) }.runOnQueue(.main)
     AsyncFunction("respondSessionPermission") { (payload: String, promise: Promise) in self.dataRuntime.command("respondPermission", payload: payload, promise: promise) }.runOnQueue(.main)
+    AsyncFunction("turnDiff") { (payload: String, promise: Promise) in
+      #if DEBUG
+      if ProcessInfo.processInfo.arguments.contains("--ui-verify"),
+        let data = payload.data(using: .utf8),
+        let params = try? JSONSerialization.jsonObject(with: data) as? [String: String],
+        params["sessionId"] == "ui-verify-diff", params["entryId"] == "diff-preview",
+        let path = params["path"], ["docs/superpowers/.diff-check.md", "src/very-long-directory-name/nested/components/another-long-file-name.ts"].contains(path) {
+        let contents = try JSONSerialization.data(withJSONObject: ["old": "a\nb\nc\n", "new": "a\nhello\nc\n"])
+        let handle = ContentStore.shared.put(StoredContent(data: contents, kind: "diff", path: path, session: "ui-verify-diff", mimeType: nil))
+        let result = try JSONSerialization.data(withJSONObject: ["status": "ok", "handle": handle, "base": "turn", "oldKind": "text", "newKind": "text", "add": 1, "del": 1])
+        promise.resolve(String(decoding: result, as: UTF8.self))
+        return
+      }
+      #endif
+      self.dataRuntime.command("turnDiff", payload: payload, promise: promise)
+    }.runOnQueue(.main)
+    AsyncFunction("fileDiff") { (payload: String, promise: Promise) in self.dataRuntime.command("fileDiff", payload: payload, promise: promise) }.runOnQueue(.main)
+    AsyncFunction("readFile") { (payload: String, promise: Promise) in self.dataRuntime.command("readFile", payload: payload, promise: promise) }.runOnQueue(.main)
+    AsyncFunction("listDir") { (payload: String, promise: Promise) in self.dataRuntime.command("listDir", payload: payload, promise: promise) }.runOnQueue(.main)
+    AsyncFunction("readContentText") { (handle: String) -> String? in
+      ContentStore.shared.get(handle).flatMap { String(data: $0.data, encoding: .utf8) }
+    }.runOnQueue(.main)
+    AsyncFunction("previewContent") { (handle: String) in
+      guard let controller = self.appContext?.utilities?.currentViewController() else {
+        throw NSError(domain: "LodyKit.ContentPreview", code: 2)
+      }
+      try ContentPreview.present(handle: handle, from: controller)
+    }.runOnQueue(.main)
     AsyncFunction("dataRuntimeStatus") { self.dataRuntime.status() }.runOnQueue(.main)
     AsyncFunction("debugProbeSchema") { (promise: Promise) in
       #if DEBUG
@@ -147,7 +176,7 @@ public final class LodyKitModule: Module {
     }
 
     View(LodyChatView.self) {
-      Events("onSend", "onActivityPress", "onReconnect", "onTitlePress", "onComposerOptionChange")
+      Events("onSend", "onActivityPress", "onTurnChangesPress", "onReconnect", "onTitlePress", "onComposerOptionChange")
       Prop("navigationTitle") { (view: LodyChatView, value: String) in view.setNavigationTitle(value) }
       Prop("navigationSubtitle") { (view: LodyChatView, value: String) in view.setNavigationSubtitle(value) }
       Prop("attachmentContextJSON") { (view: LodyChatView, value: String) in view.setAttachmentContext(value) }
@@ -164,6 +193,30 @@ public final class LodyKitModule: Module {
       }
       Prop("restoreDraftToken") { (view: LodyChatView, value: Int) in view.restoreDraft(token: value) }
       Prop("emptyText") { (view: LodyChatView, value: String) in view.setEmptyText(value) }
+    }
+
+    View(LodyDiffToolbar.self) {
+      Events("onStyleChange")
+      Prop("add") { (view: LodyDiffToolbar, value: Int?) in view.pendingAdd = value ?? 0; view.applyStats() }
+      Prop("del") { (view: LodyDiffToolbar, value: Int?) in view.pendingDel = value ?? 0; view.applyStats() }
+      Prop("base") { (view: LodyDiffToolbar, value: String?) in view.pendingBase = value ?? ""; view.applyStats() }
+      Prop("diffStyle") { (view: LodyDiffToolbar, value: String?) in view.setStyle(value ?? "unified") }
+    }
+
+    View(LodyCodeView.self) {
+      Events("onFail")
+      Prop("handle") { (view: LodyCodeView, value: String) in view.setHandle(value) }
+      Prop("path") { (view: LodyCodeView, value: String) in view.setPath(value) }
+    }
+
+    View(LodyDiffView.self) {
+      Events("onRender", "onFail")
+      Prop("path") { (view: LodyDiffView, value: String) in view.setPath(value) }
+      Prop("oldText") { (view: LodyDiffView, value: String?) in view.setOldText(value) }
+      Prop("newText") { (view: LodyDiffView, value: String?) in view.setNewText(value) }
+      Prop("handle") { (view: LodyDiffView, value: String?) in view.setHandle(value ?? "") }
+      Prop("diffStyle") { (view: LodyDiffView, value: String?) in view.setStyle(value ?? "unified") }
+      Prop("scrollEnabled") { (view: LodyDiffView, value: Bool?) in view.setScrollEnabled(value ?? true) }
     }
 
     View(LodyGroupedList.self) {

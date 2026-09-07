@@ -1,0 +1,41 @@
+"""Finished replies keep tappable file cards, never a running system warning."""
+import sys
+import time
+from driver import UI
+
+ui = UI(sys.argv[1], sys.argv[2])
+ui.axe('tap', '--label', 'Diff Fixture')
+paths = ['docs/superpowers/.diff-check.md', 'src/very-long-directory-name/nested/components/another-long-file-name.ts']
+for path in paths:
+    card = ui.element('diff-preview:changes:' + path)
+    assert path in card['AXLabel'] and '新增 1 行，删除 1 行' in card['AXLabel']
+    assert card['frame']['height'] >= 44
+answer = ui.element('diff-preview:answer')
+card = ui.element('diff-preview:changes:' + paths[0])
+assert card['frame']['y'] >= answer['frame']['y'] + answer['frame']['height']
+items = ui.state()
+assert not any((i.get('AXUniqueId') or '').startswith(('diff-warning:', 'diff-cached-warning:')) for i in items)
+assert not any('正在处理' in (i.get('AXLabel') or '') for i in items)
+ui.capture('cards')
+for index, path in enumerate(paths):
+    ui.axe('tap', '--id', 'diff-preview:changes:' + path)
+    ui.wait(lambda items: any(i.get('type') == 'Heading' and i.get('AXLabel') == path.split('/')[-1] for i in items), 'Wrong file opened')
+    ui.wait(lambda items: any(i.get('AXLabel') == 'Unified' for i in items), 'Diff response did not load')
+    # WebKit's shadow-root code lines are absent from AX. Review the actual
+    # diff pixels in these captures/video; the driver proves routing and controls.
+    time.sleep(1)
+    ui.capture('diff-' + str(index))
+    ui.axe('tap', '--label', 'Split')
+    ui.wait(lambda items: any(i.get('AXLabel') == 'Split' and i.get('AXValue') == 1 for i in items), 'Split mode was not selected')
+    time.sleep(.5)
+    ui.capture('split-' + str(index))
+    ui.axe('tap', '--label', 'Unified')
+    if index == 0:
+        # Release an edge swipe before halfway: the native return must cancel.
+        ui.axe('drag', '--start-x', '2', '--start-y', '400', '--end-x', '70', '--end-y', '400', '--duration', '1', '--post-delay', '.8')
+        ui.wait(lambda items: any(i.get('type') == 'Heading' and i.get('AXLabel') == path.split('/')[-1] for i in items), 'Cancelled return dismissed the diff')
+        ui.capture('cancelled-return')
+    ui.axe('tap', '--id', 'BackButton')
+    ui.wait(lambda items: any(i.get('AXUniqueId') == 'diff-preview:changes:' + path and 'selected' not in str(i.get('traits') or []).lower() for i in items), 'File row stayed selected after return')
+ui.capture('returned')
+print('File cards, counts, direct diff navigation and completed state passed')

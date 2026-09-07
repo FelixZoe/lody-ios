@@ -42,6 +42,8 @@ export type EntrySummary = {
   endedAt?: number;
   permissionWaitMs?: number;
   items: ItemSummary[];
+  /** Per-turn file changes recorded by the machine, independent of tool-call content. */
+  fileDiffs?: { path: string; add: number; del: number }[];
 };
 
 export type Envelope = {

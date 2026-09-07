@@ -4,6 +4,35 @@ import { build } from 'esbuild';
 import { LoroDoc, LoroMap, LoroList, LoroText } from 'loro-crdt/base64';
 import { openTestSession, loadRuntime, frame } from './helpers.mjs';
 
+test('system notice identity survives projection updates without changing the completed reply', async () => {
+  const { projectSession } = await loadRuntime();
+  const doc = new LoroDoc();
+  doc.getList('history').push({
+    id: 'done',
+    role: 'assistant',
+    finished: true,
+    items: [{ type: 'text', text: 'done' }],
+  });
+  const notice = doc.getList('history').pushContainer(new LoroMap());
+  notice.set('id', 'notice');
+  notice.set('role', 'system');
+  const item = notice
+    .setContainer('items', new LoroList())
+    .pushContainer(new LoroMap());
+  item.set('type', 'system_notice');
+  item.set('name', 'agent_warning');
+  doc.commit();
+  const before = projectSession(doc, 'live');
+  assert.equal(before.entries[0].finished, true);
+  assert.equal(before.entries[1].items[0].name, 'agent_warning');
+  item.set('name', 'chat_failed');
+  doc.commit();
+  const after = projectSession(doc, 'live');
+  assert.equal(after.entries[1].items[0].name, 'chat_failed');
+  assert.ok(after.entries[1].rev > before.entries[1].rev);
+  assert.equal(after.entries[0].finished, true);
+});
+
 test('send persists user before dispatch; duplicate incremental imports preserve one ordered streaming reply', async () => {
   const server = new LoroDoc();
   let sessionRead,

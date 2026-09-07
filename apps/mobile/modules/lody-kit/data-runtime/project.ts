@@ -123,6 +123,11 @@ function summarizeItem(
       : identity;
   const key = `${entryId}/${itemId}`;
 
+  if (type === 'system_notice') {
+    const name = typeof raw.name === 'string' ? raw.name : '';
+    return { itemId, rev: bump(projection, key, name), type, name };
+  }
+
   if (type === 'text' || type === 'thought') {
     const text = typeof raw.text === 'string' ? raw.text : '';
     return {
@@ -250,13 +255,20 @@ function summarizeEntry(
         : `idx:${index}:${i}`,
     ),
   );
+  const fileDiffs = (Array.isArray(entry?.fileDiff) ? entry.fileDiff : [])
+    .filter((diff: any) => diff && typeof diff.filePath === 'string')
+    .map((diff: any) => ({
+      path: String(diff.filePath),
+      add: Number(diff.add) || 0,
+      del: Number(diff.del) || 0,
+    }));
   const value = {
     id,
     rev: bump(
       projection,
       `entry/${id}`,
       summarizedItems.map((i) => `${i.itemId}:${i.rev}`).join(',') +
-        `|${entry?.status}|${entry?.finished}`,
+        `|${entry?.status}|${entry?.finished}|${JSON.stringify(fileDiffs)}`,
     ),
     role: String(entry?.role ?? 'assistant'),
     status: entry?.status ?? (entry?.read ? 'seen' : 'pending'),
@@ -267,6 +279,7 @@ function summarizeEntry(
     permissionWaitMs: entry?.permissionWaitMs,
     userTurnId: entry?.userTurnId,
     items: summarizedItems,
+    ...(fileDiffs.length ? { fileDiffs } : {}),
   };
   projection.entries.set(id, { fingerprint, value });
   return value;
